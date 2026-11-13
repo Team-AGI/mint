@@ -693,7 +693,10 @@ def install_check(managed, account: str, harnesses: list[str], simple: bool, sig
         return cells, ("모델 로그인: " + command if simple
                        else f"격리 계정 모델 로그인: sudo -u {account} {shell} -c '{command}'")
     healthy = all("실패" not in value for _, value in cells)
-    return cells, ("새 터미널에서 claude 또는 codex를 실행하세요" if healthy else "mint --check 로 다시 확인하세요")
+    # Simple mode with the root in the system store needs no new terminal; an isolated account's launcher still does.
+    trusted = summary.get("system_trust")
+    return cells, (("claude 또는 codex를 실행하세요" if trusted else "새 터미널에서 claude 또는 codex를 실행하세요")
+                   if healthy else "mint --check 로 다시 확인하세요")
 
 
 def self_check() -> None:

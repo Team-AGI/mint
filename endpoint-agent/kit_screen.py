@@ -979,7 +979,7 @@ class Screen:
             self.keys = FINISH_ITEMS
             self.draw()
             if wait is None:
-                while self.window is not None and self.read_key(1) not in ("\r", "\n", "q", "\x1b", " "):
+                while self.window is not None and self.read_key(1) not in ("enter", "q", "\x1b", " "):
                     pass
             elif wait:
                 self.read_key(wait)
