@@ -301,8 +301,10 @@ backup() {
   dc exec -T db pg_dump -U mcp -d mcp_governance -Fc > "$dir/mcp_governance.dump"
   # 폐기 목록·내부 Git은 DB와 같은 시점이어야 하므로 쓰는 서비스를 잠시 멈추고 묶는다.
   dc stop gateway agent-service corp-git >/dev/null
-  local v; for v in "${VOLUMES[@]}"; do volume_tar save "$v" "$dir"; done
+  # 묶기에 실패해도 멈춘 서비스는 다시 켠 뒤에 멈춘다.
+  local v failed=0; for v in "${VOLUMES[@]}"; do volume_tar save "$v" "$dir" || failed=1; done
   dc start corp-git gateway agent-service >/dev/null
+  [[ $failed == 0 ]] || die "볼륨 백업에 실패했습니다: $dir"
   (umask 077; cp .env "$dir/env"; printf '%s\n' "$MCP_BUILD_REVISION" > "$dir/VERSION")
   # LiteLLM 매핑·CA는 함께 둔다. 관리 키는 비밀 저장소가 정본이라 복구 뒤 rotate-key로 다시 넣는다.
   local f; for f in bindings.json ca.pem; do [[ ! -f "litellm/$f" ]] || cp "litellm/$f" "$dir/litellm-$f"; done
@@ -346,6 +348,8 @@ restore() {
 
 upgrade() {
   load_env
+  # 백업이 볼륨을 묶는 이미지는 체크아웃한 새 판본의 것이다. 실행 중인 서비스는 그대로 두고 먼저 만든다.
+  dc build -q
   backup
   up
 }
