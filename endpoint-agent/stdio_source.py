@@ -229,6 +229,8 @@ def prepare(config, manifest, request, check=None, seconds=1800):
                 if process.poll() is None:
                     process.kill(); process.wait(timeout=3)
             current()
+            if source['runtime'] == 'python':
+                project_metadata(tree, source['entrypoint'], stage / 'packages')
             (stage / '.ready.json').write_text(json.dumps(inventory(stage), sort_keys=True), encoding='utf-8')
             if os.name != 'nt':
                 for path in stage.rglob('*'):
@@ -242,6 +244,34 @@ def prepare(config, manifest, request, check=None, seconds=1800):
         return command(folder, source, manifest, config), folder, env
     finally:
         LOCK.release()
+
+
+def project_metadata(tree, entrypoint, packages):
+    """승인 소스는 설치하지 않고 경로로 실행하므로 서버 자신의 배포 정보가 없다. 공식 서버(fetch·git·time)처럼
+    `importlib.metadata.version(자기 이름)`을 읽는 서버가 시작하자마자 죽지 않게, 진입 파일에서 가장 가까운
+    pyproject.toml의 이름·판본으로 METADATA만 만든다. 코드는 넣지 않는다."""
+    # ponytail: 정적 판본만. 동적 판본(hatch 등) 서버는 여전히 배포 정보가 없다.
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        return
+    folder = (tree / entrypoint).parent
+    while folder != tree and not (folder / 'pyproject.toml').is_file():
+        folder = folder.parent
+    try:
+        project = tomllib.loads((folder / 'pyproject.toml').read_text(encoding='utf-8')).get('project', {})
+    except (OSError, ValueError):
+        return
+    name, version = project.get('name'), project.get('version')
+    if not (isinstance(name, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', name)
+            and isinstance(version, str) and re.fullmatch(r'[A-Za-z0-9_.+!-]{1,64}', version)):
+        return
+    key = re.sub(r'[-_.]+', '_', name).lower()
+    if packages.is_dir() and any(re.sub(r'[-_.]+', '_', p.name.split('-')[0]).lower() == key for p in packages.glob('*.dist-info')):
+        return
+    dist = packages / f'{key}-{version}.dist-info'
+    dist.mkdir(parents=True)
+    (dist / 'METADATA').write_text(f'Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n', encoding='utf-8')
 
 
 def command(folder, source, manifest, config):
