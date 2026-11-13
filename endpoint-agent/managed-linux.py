@@ -20,6 +20,7 @@ import re
 import secrets
 import contextlib
 import shutil
+import signal
 import socket
 import socketserver
 import ssl
@@ -56,6 +57,11 @@ ENFORCEMENT = Path("/usr/local/lib/mcpgw-enforcement")
 # pam_env reads /etc/environment for every login, including SSH; no shell rc file is edited.
 ENVIRONMENT = Path("/etc/environment")
 CA_BEGIN, CA_END = "# >>> mcpgw managed ca >>>", "# <<< mcpgw managed ca <<<"
+# A login-time variable misses the desktop session that ran the install: its terminal server and Codex's background
+# app-server keep the environment they started with. Codex reads the system roots when no CA variable is set,
+# so simple mode puts the Gateway root in the system store; Claude keeps the managed-settings variable.
+SYSTEM_TRUST = ((Path("/usr/local/share/ca-certificates"), ("update-ca-certificates",)),
+                (Path("/etc/pki/ca-trust/source/anchors"), ("update-ca-trust", "extract")))
 HARNESS_VERSIONS = {}
 
 
@@ -396,7 +402,49 @@ def edit_environment(values):
 
 def ca_environment(config):
     path = PROGRAMS / f"ca-{config['uid']}.crt"
-    return {"NODE_EXTRA_CA_CERTS": str(path), "CODEX_CA_CERTIFICATE": str(path)} if config.get("ca_certificate") else {}
+    if not config.get("ca_certificate"):
+        return {}
+    # With the root in the system store Codex needs no variable, and one would hide a store that lost the root.
+    if config.get("system_trust"):
+        return {"NODE_EXTRA_CA_CERTS": str(path)}
+    return {"NODE_EXTRA_CA_CERTS": str(path), "CODEX_CA_CERTIFICATE": str(path)}
+
+
+def system_trust(uid, certificate):
+    """Put this install's Gateway root in the system store, or take it out (certificate None).
+    True when the store now holds it; False on a distribution without a known store."""
+    for folder, command in SYSTEM_TRUST:
+        if not (folder.is_dir() and shutil.which(command[0])):
+            continue
+        anchor = folder / f"mcpgw-{uid}.crt"
+        if certificate:
+            private_write(anchor, certificate)
+            anchor.chmod(0o644)
+        elif anchor.exists():
+            anchor.unlink()
+        else:
+            return False
+        subprocess.run(command, check=True, capture_output=True, text=True, timeout=180)
+        return bool(certificate)
+    return False
+
+
+def restart_codex_daemons(uid):
+    """Codex's background app-server loaded its roots when it started. End the employee's running one so the next
+    `codex` starts a fresh one that trusts the Gateway; an open Codex window reconnects or is started again."""
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != uid:
+                continue
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if Path(os.fsdecode(argv[0])).name == "codex" and b"app-server" in argv and (
+                b"--managed-daemon" in argv or b"daemon" in argv):
+            with contextlib.suppress(OSError):
+                os.kill(int(entry.name), signal.SIGTERM)
 
 
 def write_helper(user):
@@ -567,9 +615,10 @@ def install(args, prepared=None):
     if config.get("ca_certificate"):
         private_write(ca_path, config["ca_certificate"])
         ca_path.chmod(0o644)
+    trusted = bool(simple and config.get("ca_certificate") and system_trust(person.pw_uid, config["ca_certificate"]))
     # Simple mode answers any process of the employee by UID (broker_binding "uid"): there is no profile to bind to.
     config.update(endpoint_id=enrolled["endpoint_id"], username=args.user, uid=person.pw_uid,
-                  owner_uid=None if simple else args.owner_uid, mode=args.mode,
+                  owner_uid=None if simple else args.owner_uid, mode=args.mode, system_trust=trusted,
                   broker_binding="uid" if simple else args.broker_binding, harnesses=sorted(binaries),
                   harness_paths=harness_paths(binaries),
                   socket=f"/run/mcpgw-{args.user}.sock", nft_baseline=str(folder / "nft-baseline.json"))
@@ -582,6 +631,8 @@ def install(args, prepared=None):
     if simple:
         write_helper(args.user)
         edit_environment(ca_environment(config))
+        if trusted:
+            restart_codex_daemons(person.pw_uid)
     else:
         subprocess.run([sys.executable, str(PROGRAMS / "enforce-linux.py"), "--user", args.user,
                         *(["--owner-uid", str(args.owner_uid)] if args.owner_uid is not None else []),
@@ -651,7 +702,7 @@ def next_step(summary, now, environment=None):
         return "모델 로그인: " + " · ".join(commands)
     # A terminal opened before the install lacks the CA variable: the harness cannot reach the Gateway from it.
     ca = summary.get("ca")
-    if summary.get("mode") == "simple" and ca and environment.get("NODE_EXTRA_CA_CERTS") != ca:
+    if summary.get("mode") == "simple" and ca and not summary.get("system_trust") and environment.get("NODE_EXTRA_CA_CERTS") != ca:
         # The managed settings carry the CA for Claude when the Gateway renders it; Codex reads only the session.
         return ("claude는 지금 실행해도 됩니다 · codex는 새 터미널(또는 다시 로그인)에서 실행하세요" if summary.get("claude_ca")
                 else "새 터미널(또는 다시 로그인)에서 claude·codex를 실행하세요")
@@ -1241,7 +1292,8 @@ def serve(args):
     summary = {"user": config["username"], "state": "unknown", "connected": False, "last_report": None,
                "servers": None, "kit": kit, "mode": config.get("mode", "isolated"), "gateway": config["gateway_url"],
                "source_socket": str(source_sock),
-               "ca": str(PROGRAMS / f"ca-{config['uid']}.crt") if config.get("ca_certificate") else None}
+               "ca": str(PROGRAMS / f"ca-{config['uid']}.crt") if config.get("ca_certificate") else None,
+               "system_trust": bool(config.get("system_trust"))}
     known = None  # server names of the policy applied before this one: what a new policy adds is shown to the employee
     while True:
         # Until the organization activates the device the loop runs fast, so the first token follows
@@ -1370,6 +1422,7 @@ def rollback(args):
                 shim.unlink(missing_ok=True)
     shutil.rmtree(folder, ignore_errors=True)
     (PROGRAMS / f"ca-{person.pw_uid}.crt").unlink(missing_ok=True)
+    system_trust(person.pw_uid, None)
     # The CA lines serve every simple install on this PC; the last one removed takes them out.
     remaining = [json.loads(path.read_text()) for path in STATE.glob("*/config.json")]
     others = [c for c in remaining if c.get("mode") == "simple" and c.get("ca_certificate")]

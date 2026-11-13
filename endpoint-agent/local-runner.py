@@ -789,6 +789,15 @@ def prepare_reason(exc):
     return '폴더 또는 엔진 준비에 실패했습니다'
 
 
+def missing_path(manifest):
+    """승인 명령·환경 변수에 적힌 이 PC의 절대 경로 중 없는 첫 번째. 키트는 소스와 잠금 패키지만 설치하고
+    외부 프로그램(Ghidra·JDK 등)은 설치하지 않으므로, 그 경로가 없으면 첫 호출이 실패한다."""
+    for value in [*(manifest.get('command') or []), *(manifest.get('env') or {}).values()]:
+        if isinstance(value,str) and (value.startswith('/') or re.match(r'[A-Za-z]:[\\/]',value)) and not Path(value).exists():
+            return value
+    return None
+
+
 def ensure_mounts(manifest, account, documents):
     """승인 폴더를 첫 호출 전에 만든다. 소유·권한·링크 거부는 실행 때와 같은 PinnedMounts가 정한다."""
     mounts=PinnedMounts(manifest,account.pw_dir,(account.pw_uid,account.pw_gid),documents)
@@ -830,6 +839,9 @@ def prepare_once(config, request, log, account, done, folders, failed):
             verify_manifest(config,manifest,entry['signature'],entry['manifest_sha256'],entry['server_id'])
             if iso(manifest['approval']['expires_at']).timestamp()<=time.time():
                 raise ValueError('승인 기한이 지났습니다')
+            gap=missing_path(manifest)
+            if gap:
+                raise ValueError(f'이 PC에 없는 경로: {gap}')
             # 마운트 없는 매니페스트(소스 실행, Windows)는 폴더를 만들 것이 없다. Windows 실행 계정에는 홈 경로도 없다.
             folders[key]=ensure_mounts(manifest,account,documents) if manifest['mounts'] else []
             # 소스 실행 서버는 이미지가 없다. 첫 호출과 같은 준비(잠금 wheel 설치)를 미리 해 둔다.
