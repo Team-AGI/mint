@@ -13,7 +13,15 @@ import time
 import platform
 
 LIMIT = 128 << 20
+# One lock per prepared folder: a call for a server that is ready, or small, must not wait while the background
+# prefetch installs another server's wheels for minutes (its call deadline is one minute).
 LOCK = threading.Lock()
+FOLDER_LOCKS = {}
+
+
+def folder_lock(folder):
+    with LOCK:
+        return FOLDER_LOCKS.setdefault(str(folder), threading.Lock())
 
 
 def relative(value):
@@ -142,7 +150,8 @@ def prepare(config, manifest, request, check=None, seconds=1800):
             check()
         if time.monotonic() >= end:
             raise TimeoutError('소스 준비 기한이 지났습니다')
-    while not LOCK.acquire(timeout=.2):
+    guard = folder_lock(folder)
+    while not guard.acquire(timeout=.2):
         current()
     try:
         current()
@@ -243,7 +252,7 @@ def prepare(config, manifest, request, check=None, seconds=1800):
         current()
         return command(folder, source, manifest, config), folder, env
     finally:
-        LOCK.release()
+        guard.release()
 
 
 def project_metadata(tree, entrypoint, packages):
