@@ -17,7 +17,7 @@
 ## 설치와 첫 로그인
 
 ```bash
-git clone --branch v1.0.7 https://github.com/MCP-governance/mint.git
+git clone --branch v1.0.8 https://github.com/MCP-governance/mint.git
 cd mint/deploy
 ./install.sh --bind <사내 IPv4>
 ```
