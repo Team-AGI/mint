@@ -1948,7 +1948,7 @@ export const EN = {
   "관리": "Manage",
   "호출 기록을 찾을 수 없습니다.": "Call record not found.",
   "미등록 MCP 보기": "View unregistered MCP",
-  "처리함": "Inbox",
+  "할 일": "To-do",
   "호출·감사": "Calls & audit",
   "도입 심사": "Intake review",
   "MCP 수명주기": "MCP lifecycle",

@@ -140,7 +140,7 @@ export async function inboxRoute(c, query) {
   const status = failed.size ? c.chip("alert", `조회 실패 ${[...failed].map((key) => KIND_LABEL[key] || key).join(", ")}`) : "";
   loaded = items;
   return {
-    html: c.html`${c.head("처리함", { status })}${kpis}${chips}
+    html: c.html`${c.head("할 일", { status })}${kpis}${chips}
       ${history ? c.approvalHistory() : c.panel("대기 중", table, { flush: true })}`,
     open: query.get("open") || "",
   };

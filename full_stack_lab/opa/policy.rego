@@ -478,7 +478,7 @@ candidate["P-X-RESTRICT-001"] := {
 # 막지 않지만, 제한 없이 나가는 외부 전송이므로 증적을 올린다.
 candidate["P-X-ALERT-001"] := {
 	"decision": "Alert",
-	"reason": "외부 전송·고위험 실행이지만 이 도구에는 적용할 제한이 없어 증적을 강화해 허용합니다.",
+	"reason": "외부 전송·고위험 실행입니다. 적용할 제한이 없어 허용하고 경보로 기록합니다.",
 	"restrictions": {},
 	"conditions": {"matched": ["tool.action=x", "PAC15.capabilities"], "violated": ["tool.restrictable"]},
 } if {
@@ -530,7 +530,7 @@ candidate["P-IMPORTANT-ALERT-001"] := {
 # 호출이어도 남겨야 할 증적의 양이 다르다.
 candidate["MCP-SHADOW-001"] := {
 	"decision": "Alert",
-	"reason": "요청자의 엔드포인트에 등록되지 않은 MCP 설정이 보고되어 증적을 강화합니다.",
+	"reason": "요청자 PC에 미등록 MCP 설정이 있어 경보로 기록합니다.",
 	"restrictions": {},
 	"conditions": {"matched": ["principal.shadow_endpoints"], "violated": []},
 } if {
@@ -649,7 +649,7 @@ candidate["P-UNTRUSTED-CONTENT-001"] := {
 # 같은 표지라도 읽기에서는 막을 근거가 아니다. 증적만 강화한다.
 candidate["P-UNTRUSTED-CONTENT-002"] := {
 	"decision": "Alert",
-	"reason": "도구 인자에서 비신뢰 지시 표지가 발견되어 증적을 강화합니다.",
+	"reason": "도구 인자에 외부 지시문이 있어 경보로 기록합니다.",
 	"restrictions": {},
 	"conditions": {"matched": ["request.untrusted_markers"], "violated": []},
 } if {
@@ -660,7 +660,7 @@ candidate["P-UNTRUSTED-CONTENT-002"] := {
 # CTL-28 / RSK-27. 반복 차단. 한 건은 오조작이고 누적은 탐색이다.
 candidate["P-ANOMALY-001"] := {
 	"decision": "Alert",
-	"reason": "짧은 시간에 차단이 반복되어 이상행위로 증적을 강화합니다.",
+	"reason": "짧은 시간에 차단이 반복되어 경보로 기록합니다.",
 	"restrictions": {},
 	"conditions": {"matched": ["context.recent_blocks"], "violated": []},
 } if {
@@ -673,7 +673,7 @@ candidate["P-ANOMALY-001"] := {
 # 지금 이 순간 열려 있는 경로다.
 candidate["MCP-SHADOW-002"] := {
 	"decision": "Alert",
-	"reason": "요청자의 엔드포인트 망에서 등록되지 않은 MCP 리스너가 발견되어 증적을 강화합니다.",
+	"reason": "요청자 PC에서 미등록 MCP가 실행 중이어서 경보로 기록합니다.",
 	"restrictions": {},
 	"conditions": {"matched": ["principal.shadow_listeners"], "violated": []},
 } if {
