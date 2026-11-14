@@ -13,7 +13,15 @@ import time
 import platform
 
 LIMIT = 128 << 20
+# One lock per prepared folder: a call for a server that is ready, or small, must not wait while the background
+# prefetch installs another server's wheels for minutes (its call deadline is one minute).
 LOCK = threading.Lock()
+FOLDER_LOCKS = {}
+
+
+def folder_lock(folder):
+    with LOCK:
+        return FOLDER_LOCKS.setdefault(str(folder), threading.Lock())
 
 
 def relative(value):
@@ -69,10 +77,30 @@ def file_hash(path):
     return digest.hexdigest()
 
 
+# The fingerprint of the last full check, kept inside the protected folder (the employee may only read it), so a
+# restarted runner does not redo a minute of hashing on the first call. Any added, removed or changed file changes it.
+VERIFIED = '.verified'
+
+
 def fingerprint(folder):
     stats = [(str(path.relative_to(folder)), info.st_size, info.st_mtime_ns, info.st_ino)
-             for path in [folder, *folder.rglob('*')] for info in [path.lstat()]]
+             for path in folder.rglob('*') if path.name != VERIFIED for info in [path.lstat()]]
     return hashlib.sha256(json.dumps(sorted(stats)).encode()).hexdigest()
+
+
+def remember(verified, folder, mark):
+    verified[str(folder)] = mark
+    try:
+        (folder / VERIFIED).write_text(mark, encoding='ascii')
+    except OSError:
+        pass  # the in-process memory still holds; the next restart checks fully
+
+
+def remembered(folder):
+    try:
+        return (folder / VERIFIED).read_text(encoding='ascii').strip()
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def inventory(folder):
@@ -80,7 +108,7 @@ def inventory(folder):
     for path in folder.rglob('*'):
         if path.is_symlink():
             raise ValueError('실행기 폴더 링크 거부')
-        if path.is_file() and path != folder / '.ready.json':
+        if path.is_file() and path not in (folder / '.ready.json', folder / VERIFIED):
             result[path.relative_to(folder).as_posix()] = file_hash(path)
     return result
 
@@ -142,7 +170,8 @@ def prepare(config, manifest, request, check=None, seconds=1800):
             check()
         if time.monotonic() >= end:
             raise TimeoutError('소스 준비 기한이 지났습니다')
-    while not LOCK.acquire(timeout=.2):
+    guard = folder_lock(folder)
+    while not guard.acquire(timeout=.2):
         current()
     try:
         current()
@@ -152,7 +181,8 @@ def prepare(config, manifest, request, check=None, seconds=1800):
         # 바뀐 파일은 지문을 바꾸므로 전체 검증으로 돌아간다. 재시작하면 사전 준비가 다시 검증한다.
         verified = config.setdefault('verified_sources', {})
         mark = fingerprint(folder) if ready.is_file() else None
-        if mark and verified.get(str(folder)) == mark:
+        if mark and (verified.get(str(folder)) == mark or remembered(folder) == mark):
+            verified[str(folder)] = mark
             return command(folder, source, manifest, config), folder, env
         if not config['source_protected'](base):
             raise ValueError('실행기 폴더 보호 확인 실패')
@@ -161,7 +191,7 @@ def prepare(config, manifest, request, check=None, seconds=1800):
                 raise ValueError('준비 폴더 보호 확인 실패')
             if json.loads(ready.read_text(encoding='utf-8')) != inventory(folder):
                 raise ValueError('준비한 실행 파일이 변경되었습니다')
-            verified[str(folder)] = mark
+            remember(verified, folder, mark)
             return command(folder, source, manifest, config), folder, env
         with tempfile.TemporaryDirectory(dir=base, prefix='prepare-') as temporary:
             stage = Path(temporary)
@@ -239,11 +269,11 @@ def prepare(config, manifest, request, check=None, seconds=1800):
             elif not config['source_seal'](stage):
                 raise ValueError('직원 읽기·실행 권한 설정 실패')
             os.rename(stage, folder)
-            verified[str(folder)] = fingerprint(folder)
+            remember(verified, folder, fingerprint(folder))
         current()
         return command(folder, source, manifest, config), folder, env
     finally:
-        LOCK.release()
+        guard.release()
 
 
 def project_metadata(tree, entrypoint, packages):

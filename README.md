@@ -8,7 +8,7 @@ MCP 거버넌스 게이트웨이
 
 한국어 · [English](README.en.md)
 
-![버전](https://img.shields.io/badge/버전-1.0.6-1f4287)
+![버전](https://img.shields.io/badge/버전-1.0.7-1f4287)
 ![MCP](https://img.shields.io/badge/MCP-2025--11--25-1f4287)
 ![Docker](https://img.shields.io/badge/설치-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/라이선스-MIT-1f4287)
@@ -122,7 +122,7 @@ MCP 서버 이용을 끝낼 때는 종료 및 폐기 화면에서 해당 MCP 서
 게이트웨이로 쓸 Linux 장비에서 아래 명령을 실행합니다.
 
 ```bash
-git clone --branch v1.0.6 https://github.com/MCP-governance/mint.git
+git clone --branch v1.0.7 https://github.com/MCP-governance/mint.git
 cd mint/deploy
 ./install.sh --bind <사내 IPv4>
 ```
