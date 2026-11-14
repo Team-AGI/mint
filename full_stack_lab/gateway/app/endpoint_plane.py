@@ -1455,6 +1455,19 @@ async def activate_managed(endpoint_id: str, actor: str, expected_hash: str, not
     return {"endpoint_id": endpoint_id, "managed_state": "active"}
 
 
+async def quarantine_managed(endpoint_id: str, actor: str, note: str) -> dict:
+    device = await db.fetch_one("SELECT * FROM endpoint_agents WHERE endpoint_id=%s AND status='active'", (endpoint_id,))
+    if not device:
+        raise ValueError("등록된 엔드포인트가 아닙니다.")
+    async with db.transaction() as connection:
+        await connection.execute(
+            "UPDATE endpoint_agents SET managed_state='quarantined' WHERE endpoint_id=%s", (endpoint_id,))
+        await connection.execute(
+            "INSERT INTO endpoint_managed_events(endpoint_id,owner_token,kind,detail) VALUES (%s,%s,'quarantined',%s)",
+            (endpoint_id, device["owner_token"], Jsonb({"actor": actor, "note": note})))
+    return {"endpoint_id": endpoint_id, "managed_state": "quarantined"}
+
+
 async def managed_failure(principal: dict, claims: dict, *, mint: bool = False, server: str | None = None) -> str | None:
     if not principal.get("managed_required") and not claims.get("device_id"):
         return None
