@@ -17,6 +17,6 @@ def catalog() -> dict:
             if policy["id"] in seen or any(not isinstance(policy.get(key), str) for key in ("name", "stage", "content")):
                 raise ValueError("Invalid policy definition")
             seen.add(policy["id"])
-        return {"source_state": "available", "policies": policies}
+        return {"source_state": "available", "policies": policies, "summary": result.get("summary") or {}}
     except (OSError, ValueError, KeyError, TypeError):
         return {"source_state": "unavailable", "policies": []}

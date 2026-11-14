@@ -1,6 +1,16 @@
 {
   "schema": 1,
   "source_sha256": "e3bb18f7ca189e5e08f1fa461c3f9e93a5f3cd720049317d6820dcbf6e2e4777",
+  "summary": {
+    "status": {
+      "구현": 18,
+      "부분": 60,
+      "없음": 7,
+      "구조적 차단": 5
+    },
+    "pac_runtime_loaded": false,
+    "with_runtime_rule": 48
+  },
   "classification_sha256": "6310acb485a81a2b487c98f38c3f3914fe5f2e73ddf18f1e5aa4fb3ff127c504",
   "policies": [
     {
@@ -18,6 +28,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-SUPPLY-001"
+      ],
+      "status": "부분",
+      "limitation": "제공자·배포 주소 승인 목록(종료일)이 데이터로 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-SUPPLY-001"
       ]
     },
     {
@@ -34,6 +50,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-CLASSIFICATION-001",
+        "PAC-09"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 기능·자료 유형 분류는 있으나 업무 범위 대조가 도입 게이트에 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-CLASSIFICATION-001",
         "PAC-09"
       ]
@@ -55,6 +78,14 @@
         "P-AUTHZ-ALLOW-001",
         "PAC-09",
         "PAC-11"
+      ],
+      "status": "부분",
+      "limitation": "콘솔 등록 서버는 자료 범위를 요청에서 구성 — 자료 소유 부서 권한표 대조 아님(pac.py:319)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "P-AUTHZ-ALLOW-001",
+        "PAC-09",
+        "PAC-11"
       ]
     },
     {
@@ -72,6 +103,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-CATALOG-001"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 「불분명」 상태가 없고 원클릭 승인이 경고를 자동 확인(agent_service.py:2586) — 보안 관리자 판단 대기 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-CATALOG-001"
       ]
     },
     {
@@ -87,7 +124,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 출력 스키마 해시 승인은 있음, 정의 필수화·시험 대조 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-I-06",
@@ -102,7 +143,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "없음",
+      "limitation": "판정 값을 만드는 기능 필요: 도입 전 시험 호출·결과 대조 단계 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-I-07",
@@ -118,6 +163,12 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "MCP-METHOD-001"
+      ],
+      "status": "구조적 차단",
+      "limitation": "제외(현재 범위): 게이트웨이가 Prompt를 중개하지 않아 전부 거부된다. 승인본 허용이 필요하면 Prompt 중개를 별도 결정해야 한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "MCP-METHOD-001"
       ]
     },
@@ -136,6 +187,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "PAC-03"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 격리 실행 강제 여부의 검증값 필요",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "PAC-03"
       ]
     },
     {
@@ -152,6 +209,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-RESIDENCY-001",
+        "P-RESIDENCY-002"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 제공자 보관·재사용 조건 데이터 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-RESIDENCY-001",
         "P-RESIDENCY-002"
       ]
@@ -172,6 +236,13 @@
       "candidate_rule_ids": [
         "P-HIGH-IMPACT-001",
         "PAC-13"
+      ],
+      "status": "부분",
+      "limitation": "등록 시 민감 기능 자동 분류 없음, 실행 시 확인은 사용자 본인이 아니라 관리자 승인",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "P-HIGH-IMPACT-001",
+        "PAC-13"
       ]
     },
     {
@@ -187,7 +258,11 @@
       "implementation": "rego",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "신청서 필수 항목 검사(양식 검증)",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-01",
@@ -203,6 +278,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "MCP-REGISTRY-001",
+        "MCP-REGISTRY-002"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "MCP-REGISTRY-001",
         "MCP-REGISTRY-002"
       ]
@@ -223,6 +305,13 @@
       "candidate_rule_ids": [
         "P-APPROVAL-EXPIRY-001",
         "PAC-01"
+      ],
+      "status": "부분",
+      "limitation": "예외 승인 자체의 대상·범위·종료일 미확인 시 차단 근거 없음(일반 승인 기간 판정만, policy.rego:385)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "P-APPROVAL-EXPIRY-001",
+        "PAC-01"
       ]
     },
     {
@@ -238,7 +327,11 @@
       "implementation": "rego",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "연결 승인에 목적·허용 범위·승인 방식·예외 승인자 기록 필수화 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-04",
@@ -254,6 +347,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "MCP-CATALOG-001",
+        "PAC-08"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "MCP-CATALOG-001",
         "PAC-08"
       ]
@@ -273,6 +373,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "PAC-06"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "PAC-06"
       ]
     },
     {
@@ -288,7 +394,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "게이트웨이는 직원 토큰을 상위 서버로 넘기지 않지만, MCP 서버가 받은 토큰을 자신의 하위 서비스에 재사용하는 것은 서버 쪽 동작이라 게이트웨이 판정으로 막을 수 없다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-07",
@@ -303,7 +413,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "연결 응답의 발신 대상·인증 서버 발급자 확인은 전송 계층(TLS 서버 이름)과 로그인 라이브러리·IdP 처리 과정의 기능이다. 현재는 조직 SSO의 ID 토큰 발급자·대상만 검사하며(oidc.py:94) 모든 MCP 연결 응답의 발신 대상 혼동 방지가 확인된 것은 아니다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-08",
@@ -318,7 +432,11 @@
       "implementation": "rego",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "범용 인증 서버 허용 목록 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-09",
@@ -333,7 +451,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "인증 결과 수신처(redirect 주소)의 승인값 일치는 해당 OAuth 클라이언트의 IdP 등록 설정과 실제 적용 상태에 달려 있다. 설정·시험 확인 전에는 집행 완료로 보지 않는다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-10",
@@ -348,7 +470,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "연결 결과와 현재 사용자·세션 요청의 일치(state·PKCE 1회 사용)는 로그인 라이브러리가 세션 상태로 검증한다. 모든 연결 경로에서 재사용 거부가 성립하는지는 별도 확인이 필요하다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-11",
@@ -365,6 +491,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-EGRESS-001"
+      ],
+      "status": "부분",
+      "limitation": "인증 서버 조회 목적지 목록 별도 필요",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-EGRESS-001"
       ]
     },
     {
@@ -380,7 +512,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 원격 MCP 주소는 DNS 해석 IP 검사·리다이렉트 미추종, 인증 서버 조회 목적지 목록은 별도 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-13",
@@ -395,7 +531,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 설정·로그 평문 검사 주기 점검 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-14",
@@ -410,7 +550,11 @@
       "implementation": "rego",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "구현",
+      "limitation": "—",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-15",
@@ -425,7 +569,11 @@
       "implementation": "rego",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "없음",
+      "limitation": "연결이 주는 Tool·자료 접근권한과 OAuth scope의 업무별 승인 범위 대조 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-16",
@@ -442,6 +590,12 @@
       "has_test_definition": false,
       "candidate_rule_ids": [
         "MCP-TRANSPORT-001"
+      ],
+      "status": "구현",
+      "limitation": "암호화 연결 여부는 전송 계층(HTTPS 클라이언트)이 결정한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-TRANSPORT-001"
       ]
     },
     {
@@ -457,7 +611,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "구현",
+      "limitation": "인증서 이름·만료 검증은 TLS 라이브러리가 연결 수립 때 수행한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-18",
@@ -475,6 +633,13 @@
       "candidate_rule_ids": [
         "MCP-TRANSPORT-001",
         "PAC-03"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-TRANSPORT-001",
+        "PAC-03"
       ]
     },
     {
@@ -490,7 +655,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "구현",
+      "limitation": "Origin 검사는 MCP 전송 미들웨어가 요청 수신 시 수행한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-20",
@@ -505,7 +674,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 실제 시작값 대조",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-R-21",
@@ -521,6 +694,12 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-CONSENT-001"
+      ],
+      "status": "부분",
+      "limitation": "동의 검사는 동의 필요로 설정된 Tool 호출에만 적용 — 모든 서버 연결 전 제공자·주소·기능 표시와 동의 필수화 없음(consent.py:33)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-CONSENT-001"
       ]
     },
@@ -539,6 +718,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "P-CONSENT-001"
+      ],
+      "status": "구현",
+      "limitation": "기간·범위 변경 시 재동의",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "P-CONSENT-001"
       ]
     },
     {
@@ -555,6 +740,14 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-AUTHZ-ALLOW-001",
+        "PAC-04",
+        "PAC-09"
+      ],
+      "status": "부분",
+      "limitation": "Agent는 게이트웨이 브로커로 고정, 사용자·Agent·자료별 위임 범위 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-AUTHZ-ALLOW-001",
         "PAC-04",
         "PAC-09"
@@ -576,6 +769,13 @@
       "candidate_rule_ids": [
         "P-CONTROL-FAIL-CLOSED",
         "PAC-04"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "P-CONTROL-FAIL-CLOSED",
+        "PAC-04"
       ]
     },
     {
@@ -592,6 +792,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-SCOPE-001",
+        "PAC-11"
+      ],
+      "status": "부분",
+      "limitation": "P-SCOPE-001은 범위 밖 자원을 경보만 함(policy.rego:536)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-SCOPE-001",
         "PAC-11"
       ]
@@ -612,6 +819,13 @@
       "candidate_rule_ids": [
         "MCP-OUTPUT-001",
         "P-UNTRUSTED-CONTENT-001"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 결과 유래 텍스트 출처 추적 없음, 승인·경보만",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-OUTPUT-001",
+        "P-UNTRUSTED-CONTENT-001"
       ]
     },
     {
@@ -628,6 +842,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-DLP-001",
+        "P-INPUT-FIELD-001"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: P-DLP-001 차단은 외부 전송(x)만 — 내부 쓰기의 자유 입력 토큰은 통과",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-DLP-001",
         "P-INPUT-FIELD-001"
       ]
@@ -648,6 +869,13 @@
       "candidate_rule_ids": [
         "MCP-SHADOW-001",
         "MCP-SHADOW-002"
+      ],
+      "status": "부분",
+      "limitation": "게이트웨이 우회 차단은 직원 PC의 방화벽·실행 제한(엔드포인트 키트)이 해야 한다. 격리 모드만 집행하고 간편 모드·미관리 경로는 관측만 한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-SHADOW-001",
+        "MCP-SHADOW-002"
       ]
     },
     {
@@ -664,6 +892,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "MCP-EGRESS-001",
+        "PAC-12"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: PAC-12 목적지 검증값은 허용 목록 포함 여부 — 실제 최종 IP 아님",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "MCP-EGRESS-001",
         "PAC-12"
       ]
@@ -684,6 +919,13 @@
       "candidate_rule_ids": [
         "MCP-DATA-EGRESS-001",
         "PAC-12"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: PAC-12는 목적지·등급만 비교, 목적 조합 대조 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-DATA-EGRESS-001",
+        "PAC-12"
       ]
     },
     {
@@ -700,6 +942,12 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "PAC-10"
+      ],
+      "status": "없음",
+      "limitation": "판정 값을 만드는 기능 필요: 실경로·심볼릭 링크 해석 없음 — 게이트웨이는 문자열만 비교(pac.py:289)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "PAC-10"
       ]
     },
@@ -718,6 +966,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-METHOD-001"
+      ],
+      "status": "구조적 차단",
+      "limitation": "제외(현재 범위): 게이트웨이가 Resource를 중개하지 않아 전부 거부된다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-METHOD-001"
       ]
     },
     {
@@ -735,6 +989,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "P-FLOW-001"
+      ],
+      "status": "부분",
+      "limitation": "최근 중요정보 열람과 수신 서버만 비교 — 모든 자료·인증정보의 출처·서버쌍·목적 대조 없음(core.py:1369)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "P-FLOW-001"
       ]
     },
     {
@@ -750,7 +1010,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "없음",
+      "limitation": "현재 게이트웨이는 하네스 내부 대화 컨텍스트를 관측하지 못해 이 조건을 집행할 수 없다. 관리형 하네스 연동을 별도로 설계할 여지는 있다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-E-13",
@@ -766,6 +1030,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-INPUT-SCHEMA-001",
+        "PAC-10"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-INPUT-SCHEMA-001",
         "PAC-10"
       ]
@@ -785,6 +1056,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-EGRESS-002"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: Tool 인자 URL은 DNS 해석 IP·리다이렉트 재검사 없음(공인 이름→사설 IP 통과)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-EGRESS-002"
       ]
     },
     {
@@ -801,6 +1078,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-INPUT-FIELD-001",
+        "P-INPUT-SCHEMA-001"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-INPUT-FIELD-001",
         "P-INPUT-SCHEMA-001"
       ]
@@ -821,6 +1105,13 @@
       "candidate_rule_ids": [
         "MCP-OUTPUT-001",
         "P-VOLUME-002"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 바이트·배열 항목 수 상한만 있고 임의 형식의 실제 문서 수와 업무별 승인 상한 대조 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-OUTPUT-001",
+        "P-VOLUME-002"
       ]
     },
     {
@@ -837,6 +1128,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-ANOMALY-001",
+        "P-VOLUME-001"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 누적 접근은 추가 승인, 반복 차단은 경보 — 한도 초과 시 중단 아님",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-ANOMALY-001",
         "P-VOLUME-001"
       ]
@@ -856,6 +1154,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-CREDENTIAL-001"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 서버 계정 대리 접근 대조 일반화 필요",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-CREDENTIAL-001"
       ]
     },
     {
@@ -871,7 +1175,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "없음",
+      "limitation": "판정 값을 만드는 기능 필요: 서버 계정 권한 범위 점검 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-E-20",
@@ -887,6 +1195,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "P-HIGH-IMPACT-001",
+        "PAC-13"
+      ],
+      "status": "부분",
+      "limitation": "확인 주체가 요청 사용자가 아니라 다른 관리자(PAC-13, pac15.rego:319)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-HIGH-IMPACT-001",
         "PAC-13"
       ]
@@ -906,6 +1221,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "PAC-13"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 값 결속·만료·1회 소비는 구현, 확인 주체는 다른 관리자",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "PAC-13"
       ]
     },
     {
@@ -922,6 +1243,12 @@
       "has_rule": false,
       "has_test_definition": false,
       "candidate_rule_ids": [
+        "P-RATE-003"
+      ],
+      "status": "부분",
+      "limitation": "재시도 중복 방지는 실행기의 요청 식별값·작업값 결속, 원자적 예약, 기존 결과 보관과 불명 상태 처리로 구현해야 한다. 현재는 같은 인자 쓰기의 24시간 중복 차단만 있다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "P-RATE-003"
       ]
     },
@@ -942,6 +1269,14 @@
         "P-RATE-001",
         "P-RATE-002",
         "PAC-15"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 사용자 단위 상한 — Agent·Tool별 상한 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "P-RATE-001",
+        "P-RATE-002",
+        "PAC-15"
       ]
     },
     {
@@ -959,6 +1294,12 @@
       "has_test_definition": false,
       "candidate_rule_ids": [
         "PAC-15"
+      ],
+      "status": "부분",
+      "limitation": "게이트웨이 대기 시간 제한은 있으나 원격 서버에서 이미 시작된 작업의 종료는 실행기·상위 서버 연동으로만 보장할 수 있다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "PAC-15"
       ]
     },
     {
@@ -974,7 +1315,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 판정 기록이 상위 호출 뒤에 저장, 원장 상태 사전 확인 없음(core.py:2558→2065)",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-E-26",
@@ -989,7 +1334,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "구현",
+      "limitation": "감사 로그 무결성은 저장소(append-only·해시 체인)가 지킨다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-E-27",
@@ -1004,7 +1353,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "감사 저장 실패 시 새 호출 차단, 진행 중 호출의 안전한 중단, 장애 알림과 복구 후 누락 조사까지 저장소·실행기·운영 기능이 필요하다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-E-28",
@@ -1019,7 +1372,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "기록 전 가림과 금지 정보 탐지가 필요하고, 제거할 수 없으면 저장 자체를 막아야 한다. 현재 감사 입력은 300자 초과만 축약한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-E-29",
@@ -1034,7 +1391,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "오류를 만드는 경로마다 민감 진단 원문을 막고 표준 오류로 바꿔야 한다. 상위 Tool의 오류 본문은 가림 뒤 그대로 반환된다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-01",
@@ -1051,6 +1412,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-CATALOG-001"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-CATALOG-001"
       ]
     },
     {
@@ -1066,7 +1433,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "구현",
+      "limitation": "목록 캐시 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-03",
@@ -1082,6 +1453,12 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "MCP-METHOD-001"
+      ],
+      "status": "구조적 차단",
+      "limitation": "제외(현재 범위): Resource 미중개로 목록·읽기가 전부 거부된다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "MCP-METHOD-001"
       ]
     },
@@ -1100,6 +1477,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-METHOD-001"
+      ],
+      "status": "구조적 차단",
+      "limitation": "제외(현재 범위): Resource 미중개로 사용이 전부 거부된다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-METHOD-001"
       ]
     },
     {
@@ -1116,6 +1499,12 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "MCP-METHOD-001"
+      ],
+      "status": "구조적 차단",
+      "limitation": "제외(현재 범위): Prompt 미중개로 사용이 전부 거부된다",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "MCP-METHOD-001"
       ]
     },
@@ -1134,6 +1523,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-SUPPLY-001"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 제공처·버전 허용 목록 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-SUPPLY-001"
       ]
     },
     {
@@ -1149,7 +1544,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 관리 실행 이미지 한정, 대상 누락·조회 실패를 「미확인」으로 표시하지 않음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-08",
@@ -1164,7 +1563,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 치명 7일 하나 — 시트의 48시간·14·30·90일·대체 통제와 다름",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-09",
@@ -1179,7 +1582,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 인스턴스 설정 대조",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-10",
@@ -1194,7 +1601,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 차단 버전 복원 금지",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-11",
@@ -1211,6 +1622,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-REGISTRY-001"
+      ],
+      "status": "구현",
+      "limitation": "",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-REGISTRY-001"
       ]
     },
     {
@@ -1226,7 +1643,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 하위 서비스 목적지 목록",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-13",
@@ -1241,7 +1662,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "없음",
+      "limitation": "판정 값을 만드는 기능 필요: 업데이트 전후 권한 비교 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-14",
@@ -1256,7 +1681,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "없음",
+      "limitation": "판정 값을 만드는 기능 필요: 정기 권한 점검 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-15",
@@ -1273,6 +1702,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-CATALOG-001"
+      ],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: Tool은 구현, 인증정보 사용 범위(OAuth scope·API 키 권한) 확대 감지는 없음",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-CATALOG-001"
       ]
     },
     {
@@ -1288,7 +1723,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "로그 수집 설정을 바꾼 뒤 허용·거부·실패 시험을 하고 필수 기록이 빠지면 배포를 멈추는 게이트는 배포 절차(CI)로 만들어야 한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-17",
@@ -1303,7 +1742,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "경보 규칙 적용·정기 시험에서 필수 경보가 나오지 않으면 규칙 적용을 멈추는 것은 운영 절차·경보 시스템 기능이다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-18",
@@ -1318,7 +1761,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "담당자 전달 성공 확인, 실패 재시도, 미복구 시 상위 연락 경로 전환은 알림 시스템 기능이다. 경보 저장만으로 전달 완료가 아니다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-O-19",
@@ -1334,6 +1781,13 @@
       "has_rule": true,
       "has_test_definition": true,
       "candidate_rule_ids": [
+        "MCP-DECOMM-001",
+        "P-SUSPEND-001"
+      ],
+      "status": "부분",
+      "limitation": "일부 위반 자동 중지·관리자 중지는 있으나 시트의 심각 변경·비정상 호출 전체에 대한 서버·Tool 즉시 중지 기준이 판정으로 정의되지 않음(core.py:100)",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
         "MCP-DECOMM-001",
         "P-SUSPEND-001"
       ]
@@ -1353,6 +1807,12 @@
       "has_test_definition": true,
       "candidate_rule_ids": [
         "MCP-DECOMM-001"
+      ],
+      "status": "구현",
+      "limitation": "종료 판정 C1~C4",
+      "rule_runtime": false,
+      "runtime_rule_ids": [
+        "MCP-DECOMM-001"
       ]
     },
     {
@@ -1368,7 +1828,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "폐기 서버의 Agent 접속 설정 제거·재등록 차단·재연결 실패 확인은 엔드포인트 키트와 관리형 하네스 설정이 해야 한다 — 관리형 경로 밖 Agent는 입증하지 못함",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-D-03",
@@ -1383,7 +1847,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "폐기 자격의 요청 차단과 제공자 측 무효화 확인이 필요하다. Gitea 자격 회수 경로(decommission.py:620)는 있으나 모든 제공자로 일반화되지 않았다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-D-04",
@@ -1398,7 +1866,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "관리형 로컬 실행만 중지·확인됨 — 관리 범위 밖 로컬 프로세스 종료·자동 시작 해제는 엔드포인트 조치가 필요하다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-D-05",
@@ -1413,7 +1885,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "문서 저장소의 전용 계정·공유 권한 회수와 결과 확인, 회수 전 접근 차단은 저장소 API 연동 조치다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-D-06",
@@ -1428,7 +1904,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "폐기 서버의 전용 허용 경로 제거와 결과 확인은 네트워크 설정 조치다. 다른 서비스와 공유하는 경로는 영향과 대체 경로를 따로 다뤄야 한다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-D-07",
@@ -1443,7 +1923,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "제공자 내부 삭제는 직접 관측할 수 없으나, 증빙 수령·검토 상태와 게이트웨이 경유 새 전송 차단 상태를 입력으로 「폐기 완료」 표시를 제한하는 판정은 가능하다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-D-08",
@@ -1458,7 +1942,11 @@
       "implementation": "solution",
       "has_rule": false,
       "has_test_definition": false,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "구현",
+      "limitation": "보존 기간 관리는 감사 저장소 기능이다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     },
     {
       "id": "POL-D-09",
@@ -1473,7 +1961,11 @@
       "implementation": "rego+sensor",
       "has_rule": true,
       "has_test_definition": true,
-      "candidate_rule_ids": []
+      "candidate_rule_ids": [],
+      "status": "부분",
+      "limitation": "판정 값을 만드는 기능 필요: 게이트웨이는 기동 때 서명된 폐기 기록으로 복원된 폐기 서버·자격을 다시 막지만(disposal.py reconcile), 복원 설정의 주소·허용 Tool·접근권한을 현재 승인과 대조하는 입력은 없다",
+      "rule_runtime": false,
+      "runtime_rule_ids": []
     }
   ]
 }

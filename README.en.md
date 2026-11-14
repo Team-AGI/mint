@@ -8,7 +8,7 @@ MCP Governance Gateway
 
 [한국어](README.md) · English
 
-![Version](https://img.shields.io/badge/version-1.0.4-1f4287)
+![Version](https://img.shields.io/badge/version-1.0.5-1f4287)
 ![MCP](https://img.shields.io/badge/MCP-2025--11--25-1f4287)
 ![Docker](https://img.shields.io/badge/install-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-1f4287)
@@ -122,7 +122,7 @@ See [Console screenshots (Korean)](docs/user-guide/screenshots.md) for the actua
 Run the following on the Linux machine that will serve as the gateway.
 
 ```bash
-git clone --branch v1.0.4 https://github.com/MCP-governance/mint.git
+git clone --branch v1.0.5 https://github.com/MCP-governance/mint.git
 cd mint/deploy
 ./install.sh --bind <internal IPv4>
 ```
