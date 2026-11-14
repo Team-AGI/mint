@@ -402,7 +402,7 @@ async def me(authorization: str | None = Header(default=None)):
     return {**console_user(user), "synthetic": not field,
             "managed_required": user["managed_required"],
             "managed_devices": await db.fetch_all(
-                "SELECT endpoint_id,managed_state,status,heartbeat_at FROM endpoint_agents WHERE owner_token=%s AND device_epoch IS NOT NULL",
+                "SELECT endpoint_id,hostname,managed_state,status,heartbeat_at,last_seen_at FROM endpoint_agents WHERE owner_token=%s AND device_epoch IS NOT NULL",
                 (user["principal"],)),
             "git_url": git_url.rstrip("/") + f"/{GITEA_ORG}" if git_url else "", "kit": await pc_kit() if field else None}
 
@@ -2151,7 +2151,8 @@ async def approved_mcp_rows(user: dict, server_id: str | None = None) -> list[di
             continue
         approved_tools = [{"name": name, "action": action if action in {"r", "w", "x"} else None,
                            "purpose": ((spec.get("tool_reviews") or {}).get(name) or {}).get("purpose", ""),
-                           "scope_reviewed": bool((spec.get("tool_reviews") or {}).get(name))}
+                           "scope_reviewed": bool((spec.get("tool_reviews") or {}).get(name)),
+                           "consent": bool(((spec.get("tool_reviews") or {}).get(name) or {}).get("consent"))}
                           for name, action in (spec.get("tools") or {}).items()]
         approved.append({**row, "valid_until": until.isoformat(), "tools": approved_tools,
                          "execution": "remote" if remote else "pc" if spec.get("local") else

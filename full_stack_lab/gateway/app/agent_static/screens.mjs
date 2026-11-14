@@ -6,26 +6,17 @@ const age = (value, now) => { const n = at(value); return n == null ? Infinity :
 const count = (rows, test) => rows.filter(test).length;
 
 export const isSilent = (agent, now = Date.now()) => age(agent.last_seen_at, now) > FRESH_MS;
+export const reportState = (agent, now = Date.now()) => {
+  const gap = age(agent.last_seen_at, now);
+  return gap <= FRESH_MS ? "fresh" : gap <= DAY ? "delayed" : "stale";
+};
 
 export function endpointCards(agents, now = Date.now()) {
   const live = agents.filter((a) => a.status !== "revoked");
-  const silent = count(live, (a) => isSilent(a, now));
-  return { total: live.length, reporting: live.length - silent, silent,
+  const state = (key) => count(live, (a) => reportState(a, now) === key);
+  const silent = live.length - state("fresh");
+  return { total: live.length, reporting: state("fresh"), silent, delayed: state("delayed"), stale: state("stale"),
     quarantined: count(live, (a) => a.managed_state === "quarantined"), pending: count(live, (a) => a.managed_state === "pending") };
-}
-
-export function managedMix(agents) {
-  const live = agents.filter((a) => a.status !== "revoked");
-  const state = (key) => count(live, (a) => a.managed_state === key);
-  return { active: state("active"), pending: state("pending"), quarantined: state("quarantined"),
-    unmanaged: live.length - state("active") - state("pending") - state("quarantined") };
-}
-
-export function reportAges(agents, now = Date.now()) {
-  const live = agents.filter((a) => a.status !== "revoked");
-  const within = (limit) => count(live, (a) => age(a.last_seen_at, now) <= limit);
-  const quarter = within(FRESH_MS), hour = within(HOUR), day = within(DAY);
-  return { quarter, hour: hour - quarter, day: day - hour, older: live.length - day };
 }
 
 export function endpointRows(agents, devices, stations, accounts) {
@@ -45,8 +36,9 @@ export function filterEndpoints(rows, { silent = false, now = Date.now() } = {})
 }
 
 export const PC_STAGES = ["none", "signed", "installed", "active"];
+const livePcs = (account, agents) => agents.filter((a) => a.owner_token === account.token && a.status !== "revoked");
 export function pcStage(account, agents) {
-  const own = agents.filter((a) => a.owner_token === account.token && a.status !== "revoked");
+  const own = livePcs(account, agents);
   if (own.some((a) => a.managed_state === "active")) return "active";
   if (own.length) return "installed";
   return account.status === "active" ? "signed" : "none";
@@ -55,19 +47,13 @@ export function pcStage(account, agents) {
 export function userCards(accounts, deleted, signups, suspensions) {
   const live = accounts.filter((a) => a.status !== "deleted");
   const stopped = new Set(suspensions.filter((s) => !s.resumed_at).map((s) => s.user_token || s.display_name));
-  return { total: live.length, active: count(live, (a) => a.status === "active"), stopped: stopped.size,
+  return { total: live.length, active: count(live, (a) => a.status === "active"), disabled: count(live, (a) => a.status === "disabled"), stopped: stopped.size,
     pending: count(signups, (s) => s.status === "pending"), deleted: deleted.length };
-}
-
-export function departmentCounts(accounts, top = 8) {
-  const tally = new Map();
-  for (const a of accounts) tally.set(a.department || "", (tally.get(a.department || "") || 0) + 1);
-  return [...tally].sort((x, y) => y[1] - x[1]).slice(0, top).map(([name, value]) => ({ name, value }));
 }
 
 export function topBlocked(people, top = 10) {
   return (people || []).filter((p) => !p.other && p.key && Number(p.Block) > 0)
-    .sort((a, b) => b.Block - a.Block).slice(0, top).map((p) => ({ name: p.key, value: Number(p.Block) }));
+    .sort((a, b) => b.Block - a.Block).slice(0, top).map((p) => ({ name: p.key, value: Number(p.Block), total: Number(p.total) || 0 }));
 }
 
 export function peopleStats(people) {
@@ -75,7 +61,7 @@ export function peopleStats(people) {
 }
 
 export function userRows(accounts, deleted, agents, stats = {}) {
-  const row = (a, state) => ({ ...a, state, stage: state === "deleted" ? "none" : pcStage(a, agents),
+  const row = (a, state) => ({ ...a, state, stage: state === "deleted" ? "none" : pcStage(a, agents), pcs: livePcs(a, agents).length,
     calls: stats[a.display_name] ? Number(stats[a.display_name].total) || 0 : 0, blocked: Number(stats[a.display_name]?.Block) || 0 });
   return [...accounts.map((a) => row(a, a.status)), ...deleted.map((a) => row(a, "deleted"))];
 }
@@ -108,15 +94,19 @@ export function daysLeft(value, now = Date.now()) {
 export function serverCards(servers, registrations, now = Date.now(), soon = 14) {
   const live = servers.filter((s) => s.lifecycle !== "RETIRED");
   const due = count(live, (s) => { const d = daysLeft(registrations?.[s.id]?.valid_until, now); return d != null && d <= soon; });
-  return { operating: count(live, (s) => s.lifecycle === "OPERATING" || !s.lifecycle),
+  return { operating: count(live, (s) => s.lifecycle === "OPERATING" || !s.lifecycle), live: live.length,
     attention: count(live, (s) => ["ERROR", "DRIFT", "PENDING"].includes(s.status)), due,
+    unverified: count(live, (s) => s.plane && s.plane.state !== "gateway_enforced" && s.plane.state !== "endpoint_enforced"),
     blocked: count(live, (s) => Number(s.blocked) > 0) };
 }
 
-export function statusMix(servers) {
-  const tally = {};
-  for (const s of servers) if (s.lifecycle !== "RETIRED") tally[s.status] = (tally[s.status] || 0) + 1;
-  return tally;
+export function serverOrder(servers, registrations, now = Date.now(), soon = 14) {
+  const rank = (s) => {
+    const d = daysLeft(registrations?.[s.id]?.valid_until, now);
+    return d != null && d <= soon ? 0 : ["ERROR", "DRIFT", "PENDING"].includes(s.status) ? 1 : 2;
+  };
+  const left = (s) => daysLeft(registrations?.[s.id]?.valid_until, now) ?? Infinity;
+  return [...servers].sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 ? left(a) - left(b) : 0));
 }
 
 export function blockRate(server) {
@@ -166,7 +156,7 @@ export function intakeCards(requests, reassess = 0) {
   const done = (r) => at(r.reviewed_at);
   const finished = requests.filter((r) => ["APPROVED", "REJECTED"].includes(r.status) && done(r) != null && at(r.created_at) != null);
   const days = finished.length ? finished.reduce((s, r) => s + (done(r) - at(r.created_at)), 0) / finished.length / DAY : null;
-  return { waiting: waiting.length, days: days == null ? null : Math.round(days * 10) / 10,
+  return { waiting: waiting.length, days: days == null ? null : Math.round(days * 10) / 10, done: finished.length,
     high: count(waiting, (r) => ["high", "very_high"].includes(r.risk?.tier)),
     reassess: reassess + count(requests, (r) => r.endpoint_reapproval_required) };
 }

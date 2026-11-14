@@ -130,14 +130,14 @@ export function donut(items, { total = true, onClick } = {}) {
     onClick,
   };
 }
-export function bars(items, { unit = "건", tone = "--brand", onClick } = {}) {
+export function bars(items, { unit = "건", tone = "--brand", onClick, labelWidth = 180, wrap = false } = {}) {
   return {
     legend: { show: false },
     tooltip: { ...base().tooltip, trigger: "axis", axisPointer: { type: "shadow" } },
     grid: { ...base().grid, top: 8 },
     xAxis: axis({ type: "value", minInterval: 1 }),
     yAxis: axis({ type: "category", data: items.map((i) => i.name), inverse: true,
-      axisLabel: { color: css("--ink-2"), fontSize: 12.5, width: 180, overflow: "truncate" } }),
+      axisLabel: { color: css("--ink-2"), fontSize: 12.5, width: labelWidth, overflow: wrap ? "break" : "truncate" } }),
     series: [{ type: "bar", barMaxWidth: 20, data: items.map((i) => ({ value: i.value, itemStyle: { color: i.color || css(tone) } })),
       label: { show: true, position: "right", color: css("--ink-2"), formatter: `{c}${unit}` } }],
     onClick,
@@ -146,7 +146,7 @@ export function bars(items, { unit = "건", tone = "--brand", onClick } = {}) {
 export function lines(categories, series, { onClick, unit = "건" } = {}) {
   return {
     tooltip: { ...base().tooltip, trigger: "axis", valueFormatter: (v) => (v == null ? "—" : `${v}${unit}`) },
-    xAxis: axis({ type: "category", data: categories, boundaryGap: false }),
+    xAxis: axis({ type: "category", data: categories, boundaryGap: false, axisLabel: { color: css("--ink-3"), fontSize: 12.5, alignMinLabel: "left", alignMaxLabel: "right" } }),
     yAxis: axis({ type: "value", minInterval: 1 }),
     series: series.map((x) => ({ name: x.name, type: "line", showSymbol: !x.dashed && categories.length < 32, symbolSize: 6, smooth: false, data: x.data,
       itemStyle: { color: x.color }, lineStyle: { color: x.color, width: x.dashed ? 1.5 : 2, type: x.dashed ? "dashed" : "solid" },

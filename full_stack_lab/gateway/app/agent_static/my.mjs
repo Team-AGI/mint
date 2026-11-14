@@ -1,23 +1,28 @@
+import { consentState, reportView } from "./dash.mjs";
 const OPEN_REQUEST = ["HOLD", "VALIDATION_QUEUED", "VALIDATING", "VALIDATED", "REMOTE_REVIEWED"];
 const TABS = ["available", "consent", "mine", "new"];
 
+const CONSENT = { granted: ["allow", "동의함"], pending: ["alert", "동의 필요"], denied: ["block", "거부"], revoked: ["outline", "철회"],
+  before: ["outline", "동의 전"], none: ["outline", "동의 불필요"], unknown: ["outline", "확인 불가"] };
+
 const consentChip = (c, rows, server) => {
-  const mine = rows.filter((row) => row.server_id === server);
-  if (!mine.length) return c.html`<span class="muted">—</span>`;
-  if (mine.some((row) => row.status === "PENDING")) return c.html`<a href="#/my?t=consent&server=${encodeURIComponent(server)}">${c.chip("alert", "동의 필요")}</a>`;
-  if (mine.some((row) => row.status === "GRANTED")) return c.chip("allow", "동의");
-  if (mine.some((row) => row.status === "DENIED")) return c.chip("block", "거부");
-  return c.chip("outline", "철회");
+  const state = consentState(server, rows);
+  const [tone, label] = CONSENT[state];
+  return ["pending", "denied", "revoked"].includes(state)
+    ? c.html`${c.chip(tone, label)} <a class="btn sm" href="#/my?t=consent&server=${encodeURIComponent(server.server_id)}">동의 검토</a>` : c.chip(tone, label);
 };
 
 const deviceCard = (c) => {
   const devices = (c.viewer.managed_devices || []).filter((d) => d.status === "active");
-  const state = devices.some((d) => d.managed_state === "active") ? "active" : devices.find((d) => d.managed_state)?.managed_state;
-  const label = state ? c.MANAGED_STATE[state] || "—" : "미연결";
-  const tone = state === "active" ? "" : "alert";
-  return c.viewer.kit
-    ? c.html`<a class="kpi ${tone}" href="#" data-act="pc-kit"><div class="label">내 PC 연결</div><div class="value">${label}</div></a>`
-    : c.html`<div class="kpi ${tone}"><div class="label">내 PC 연결</div><div class="value">${label}</div></div>`;
+  const newest = (list) => [...list].sort((a, b) => String(reportView(b).at).localeCompare(String(reportView(a).at)))[0];
+  const best = newest(devices.filter((d) => d.managed_state === "active")) || devices.find((d) => d.managed_state) || devices[0];
+  const view = reportView(best);
+  const delayed = view.state === "active" && view.delayed;
+  const label = !best ? "미연결" : delayed ? "보고 지연" : c.MANAGED_STATE[view.state] || "—";
+  const tone = view.state === "active" && !delayed ? "" : "alert";
+  const report = best ? `${best.hostname ? `${best.hostname} · ` : ""}${view.at ? `최근 보고 ${c.ago(view.at)}` : "보고 없음"}` : "";
+  return c.html`<div class="kpi ${tone}"><div class="label">내 PC 연결</div><div class="value">${label}</div>
+    <div class="foot"><span class="delta">${report}</span>${c.viewer.kit ? c.html`<button class="btn sm" type="button" data-act="pc-kit">연결 설정</button>` : ""}</div></div>`;
 };
 
 export async function myRoute(c, tab, query) {
@@ -33,8 +38,8 @@ export async function myRoute(c, tab, query) {
     { key: "available", label: "사용 가능한 MCP", body: c.panel("사용 가능한 MCP",
       c.approvedMcpTable(servers, c.approvedMcpSearch(), (server) => consentChip(c, rows, server)), { flush: true,
         tools: servers.length ? c.listToolbar("available-mcp", "이름 또는 기능 검색", c.approvedMcpSearch()) : "" }) },
-    { key: "consent", label: "내 동의", n: pending.n, hot: pending.hot, body: c.html`<div class="stack">${pending.body}${history.body}</div>` },
-    { key: "mine", label: "내 신청", n: requests.length, body: c.panel("내 신청", requests.length ? c.html`<table class="data"><thead><tr><th>서비스</th><th>상태</th><th>신청</th></tr></thead><tbody>
+    { key: "consent", label: "내 동의", n: pending.n || null, hot: pending.hot, body: c.html`<div class="stack">${pending.body}${history.body}</div>` },
+    { key: "mine", label: "전체 신청", n: requests.length, body: c.panel("내 신청", requests.length ? c.html`<table class="data"><thead><tr><th>서비스</th><th>상태</th><th>신청</th></tr></thead><tbody>
       ${requests.map((r) => c.html`<tr><td><b>${r.display_name}</b></td><td>${c.chip(...(c.INTAKE_STATUS[r.status] || ["", r.status]))}${r.status === "HOLD" && r.review_note ? c.html`<span class="sub">${c.short(r.review_note, 90)}</span>` : ""}</td>
         <td class="small nowrap">${c.when(r.created_at)}</td></tr>`)}</tbody></table>` : c.empty("신청 없음"), { flush: true }) },
     { key: "new", label: "새 신청", body: c.intakeNewBody(pre, fromRepo, catalog) },
