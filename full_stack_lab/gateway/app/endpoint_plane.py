@@ -1837,8 +1837,8 @@ async def shadow_listener_count_for(user_token: str) -> int:
     row = await db.fetch_one(
         """SELECT count(*) AS n FROM endpoint_listeners l
              JOIN endpoint_agents a USING (endpoint_id)
-            WHERE a.owner_token=%s AND l.classification='shadow'
-              AND l.mcp_evidence IN ('confirmed','suspected')""",
+            WHERE a.owner_token=%s AND a.status='active' AND a.agent_version<>'unregistered'
+              AND l.classification='shadow' AND l.mcp_evidence IN ('confirmed','suspected')""",
         (user_token,),
     )
     return int(row["n"] or 0) if row else 0
