@@ -250,7 +250,7 @@ def project_metadata(tree, entrypoint, packages):
     """승인 소스는 설치하지 않고 경로로 실행하므로 서버 자신의 배포 정보가 없다. 공식 서버(fetch·git·time)처럼
     `importlib.metadata.version(자기 이름)`을 읽는 서버가 시작하자마자 죽지 않게, 진입 파일에서 가장 가까운
     pyproject.toml의 이름·판본으로 METADATA만 만든다. 코드는 넣지 않는다."""
-    # ponytail: 정적 판본만. 동적 판본(hatch 등) 서버는 여전히 배포 정보가 없다.
+    # 한계: 정적 판본만. 동적 판본(hatch 등) 서버는 여전히 배포 정보가 없다.
     try:
         import tomllib
     except ModuleNotFoundError:

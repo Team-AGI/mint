@@ -433,6 +433,12 @@ candidate["P-RATE-003"] := {
 	duplicate_in_flight == true
 }
 
+# An exact approval covers every reason on the request the approver saw. A period approval
+# (input.approval.policies) covers only the reasons it was granted for, never a new one.
+approved_for(_) if input.approval.granted == true
+
+approved_for(policy_id) if policy_id in object.get(input, ["approval", "policies"], [])
+
 candidate["P-X-APPROVAL-001"] := {
 	"decision": "Approval",
 	"reason": "중요정보의 고위험 실행은 10분 이내 승인이 필요합니다.",
@@ -441,7 +447,7 @@ candidate["P-X-APPROVAL-001"] := {
 } if {
 	input.tool.action == "x"
 	input.resource.data_class == "important"
-	not input.approval.granted
+	not approved_for("P-X-APPROVAL-001")
 }
 
 candidate["P-VOLUME-001"] := {
@@ -452,7 +458,7 @@ candidate["P-VOLUME-001"] := {
 } if {
 	input.resource.data_class == "important"
 	recent_important >= important_limit
-	not input.approval.granted
+	not approved_for("P-VOLUME-001")
 }
 
 candidate["P-X-RESTRICT-001"] := {
@@ -637,7 +643,7 @@ candidate["P-UNTRUSTED-CONTENT-001"] := {
 } if {
 	count(untrusted_markers) > 0
 	input.tool.action in {"w", "x"}
-	not input.approval.granted
+	not approved_for("P-UNTRUSTED-CONTENT-001")
 }
 
 # 같은 표지라도 읽기에서는 막을 근거가 아니다. 증적만 강화한다.

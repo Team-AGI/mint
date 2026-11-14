@@ -409,5 +409,15 @@ async def build(payload: dict, principal: dict, cls, tool: dict | None, contract
                                        "status": row["status"] if row else "MISSING", "request_id": row["request_payload"].get("pac_request_id", "") if row else "",
                                        "request_digest": (row["request_payload"].get("pac_digest", "") if row else ""),
                                        "server_id": server, "feature_id": feature, "action": cls.action,
-                                       "valid_from_ns": ns(row["created_at"]) if row else 0, "valid_until_ns": ns(row["expires_at"]) if row else 0}
+                                       "valid_from_ns": ns(row["created_at"]) if row else 0,
+                                       "valid_until_ns": ns(row.get("valid_until") or row["expires_at"]) if row else 0}
+        if row and row.get("window_minutes"):
+            # A period approval (approve_request): bound to the requester and the approved tool, not one request.
+            stored = row["request_payload"]
+            requester = await db.fetch_one("SELECT user_id FROM principals WHERE token=%s", (row["requested_by"],))
+            facts["individual_approval"].update(
+                window=True, user_id=requester["user_id"] if requester else "",
+                server_id=stored.get("server_id", ""), feature_id=stored.get("tool", ""),
+                single_use_reserved=row["status"] == "APPROVED",
+                valid_from_ns=ns(row["reviewed_at"]), valid_until_ns=ns(row["valid_until"]))
     return document

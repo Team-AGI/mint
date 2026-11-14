@@ -2903,7 +2903,9 @@ async def approvals(authorization: str | None = Header(default=None), page: int 
         """SELECT a.id, a.requested_by, a.created_at, a.reviewed_at, a.reviewed_by,
                   CASE WHEN a.revoked_at IS NOT NULL THEN 'REVOKED' WHEN a.status='PENDING' THEN 'EXPIRED' ELSE a.status END AS status,
                   a.request_payload->>'server_id' AS server_id, a.request_payload->>'tool' AS tool,
-                  p.display_name, p.department, a.explanation,
+                  p.display_name, p.department, a.explanation, a.window_minutes, a.valid_until, a.uses,
+                  (a.status = 'APPROVED' AND a.revoked_at IS NULL AND a.valid_until > now()
+                   AND (a.window_minutes IS NOT NULL OR a.uses = 0)) AS window_open,
                   (a.reviewed_by = %s) AS can_revoke
              FROM approvals a LEFT JOIN principals p ON p.token = a.requested_by
             WHERE a.status <> 'PENDING' OR a.expires_at <= now()
@@ -2935,13 +2937,18 @@ async def reject(approval_id: UUID, request: Rejection, authorization: str | Non
     return response.json()
 
 
+class ApprovalWindow(StrictModel):
+    window_minutes: Literal[0, 10, 30] = 30
+
+
 @app.post("/approvals/{approval_id}/approve")
-async def approve(approval_id: UUID, authorization: str | None = Header(default=None)):
+async def approve(approval_id: UUID, request: ApprovalWindow | None = None, authorization: str | None = Header(default=None)):
     user = await current_identity(authorization)
     if "admin" not in user["roles"]:
         raise HTTPException(403, "관리자 계정이 필요합니다.")
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(f"{GATEWAY_URL}/api/approvals/{approval_id}/approve", headers={"Authorization": authorization})
+        response = await client.post(f"{GATEWAY_URL}/api/approvals/{approval_id}/approve", headers={"Authorization": authorization},
+                                     json=(request or ApprovalWindow()).model_dump())
     if response.status_code >= 400:
         raise HTTPException(response.status_code, "승인할 수 없습니다. 이미 처리됐거나 만료된 요청인지 확인하세요.")
     return response.json()

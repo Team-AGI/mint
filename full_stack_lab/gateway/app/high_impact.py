@@ -42,11 +42,34 @@ def explanation(approval_id: str, arguments: dict, item: dict, verdict: dict, da
             "effect_reversal": False}
 
 
+# A period approval is a budget, not a blank cheque: past this many dispatches it needs a new approval.
+WINDOW_MAX_USES = 50
+
+
+def window(approval: dict | None) -> bool:
+    """A period approval (10 or 30 minutes): the requester's calls to that tool, any arguments, for the reasons
+    the approver saw. A one-use approval stays bound to the exact request, as before."""
+    return bool(approval and approval.get("window_minutes"))
+
+
+def live(approval: dict | None, now) -> bool:
+    if not approval or approval.get("status") != "APPROVED" or approval.get("revoked_at"):
+        return False
+    if window(approval) and (approval.get("uses") or 0) >= WINDOW_MAX_USES:
+        return False
+    if approval.get("valid_until") and not window(approval) and approval.get("uses"):
+        return False  # a one-use approval is spent by its dispatch
+    return (approval.get("valid_until") or approval["expires_at"]) > now
+
+
 def bound(approval: dict | None, payload: dict, item: dict, digest) -> bool:
     if not approval or approval.get("status") != "APPROVED" or not approval.get("reviewed_by") or approval.get("revoked_at"):
         return False
     stored = approval.get("request_payload") or {}
+    if window(approval) and "P-HIGH-IMPACT-001" not in (stored.get("covered_policy_ids") or []):
+        return False
+    keys = ("server_id", "tool", "user_token") if window(approval) else ("server_id", "tool", "arguments", "user_token")
     return (approval.get("request_fingerprint") == digest(stored)
             and stored.get("impact_scope_sha256") == digest(terms(item))
-            and all(stored.get(k) == payload.get(k) for k in ("server_id", "tool", "arguments", "user_token"))
+            and all(stored.get(k) == payload.get(k) for k in keys)
             and bool(approval.get("explanation")))

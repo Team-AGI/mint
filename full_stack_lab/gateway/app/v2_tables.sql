@@ -409,6 +409,12 @@ CREATE TABLE IF NOT EXISTS incident_timer_heartbeat (
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS explanation jsonb;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS revoked_at timestamptz;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS revoked_by text;
+-- An approval opens a window for the requester and that tool; the gateway no longer runs the stored call itself.
+-- window_minutes NULL = one use. uses counts dispatches made under it.
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS window_minutes integer;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS valid_until timestamptz;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS uses integer NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS approvals_window_idx ON approvals(requested_by, valid_until) WHERE status = 'APPROVED';
 
 -- What the applicant stated about data, transfer, permission and users. The risk tier is
 -- computed from it each time (risk_tier.assess), never stored as a value that could drift from it.

@@ -233,6 +233,12 @@ class ApprovalEvidence(StrictModel):
     reason: Literal["scope_confirmed"] = "scope_confirmed"
 
 
+class ApproveRequest(StrictModel):
+    evidence_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    reason: Literal["scope_confirmed"] | None = None
+    window_minutes: Literal[0, 10, 30] = 30
+
+
 class IntentResolve(StrictModel):
     outcome: Literal["executed", "not_executed"]
     note: str = Field(default="", max_length=500)
@@ -826,10 +832,11 @@ async def addon_mcp_result(request: AddonResult, user: dict = Depends(caller)) -
 
 
 @app.post("/api/approvals/{approval_id}/approve")
-async def approve(approval_id: str, request: ApprovalEvidence | None = None, user: dict = Depends(admin_caller)) -> dict:
+async def approve(approval_id: str, request: ApproveRequest | None = None, user: dict = Depends(admin_caller)) -> dict:
+    request = request or ApproveRequest()
     try:
-        return await approve_request(approval_id, user["principal"],
-            request.reason if request else None, request.evidence_sha256 if request else None)
+        return await approve_request(approval_id, user["principal"], request.reason, request.evidence_sha256,
+                                     request.window_minutes)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
@@ -851,9 +858,9 @@ async def approval_evidence(approval_id: UUID, user: dict = Depends(admin_caller
 
 
 @app.post("/api/approvals/{approval_id}/revoke")
-async def approval_revoke(approval_id: UUID, request: ApprovalEvidence, user: dict = Depends(admin_caller)) -> dict:
+async def approval_revoke(approval_id: UUID, request: ApprovalEvidence | None = None, user: dict = Depends(admin_caller)) -> dict:
     try:
-        return await core.revoke_approval(str(approval_id), user["principal"], request.evidence_sha256)
+        return await core.revoke_approval(str(approval_id), user["principal"], request.evidence_sha256 if request else None)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
