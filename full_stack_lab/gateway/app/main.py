@@ -344,6 +344,21 @@ async def ops_status(_: dict = Depends(admin_caller)) -> dict:
             "disposal": await db.fetch_one("SELECT * FROM worker_heartbeats WHERE worker='disposal'")}
 
 
+class OpsSuspend(StrictModel):
+    reason: str = Field(min_length=4, max_length=500)
+
+
+@app.post("/api/ops/servers/{server_id}/suspend")
+async def ops_suspend(server_id: str, request: OpsSuspend, user: dict = Depends(admin_caller)) -> dict:
+    try:
+        stopped = await ops_response.suspend(server_id, "operator", request.reason, {"requested_by": user["principal"]})
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if not stopped:
+        raise HTTPException(409, "이미 중지된 서버입니다.")
+    return {"server_id": server_id, "status": "DISABLED"}
+
+
 @app.post("/api/ops/servers/{server_id}/resume")
 async def ops_resume(server_id: str, request: OpsResume, user: dict = Depends(admin_caller)) -> dict:
     try:
@@ -780,6 +795,22 @@ async def policy_ledger_view(user: dict = Depends(admin_caller)) -> dict:
         "environment": core.GATEWAY_ENVIRONMENT,
         "policies": entries,
     }
+
+
+@app.get("/api/policy/activity")
+async def policy_activity(hours: int = Query(24, ge=1, le=720), user: dict = Depends(admin_caller)) -> dict:
+    """Final-decision counts per policy rule over a window, and the equal window before it."""
+    until = datetime.now(UTC)
+    since = until - timedelta(hours=hours)
+    rows = await db.fetch_all(f"""SELECT d.policy_id, d.decision, count(*) AS n FROM decisions d
+                                  WHERE d.created_at >= %s AND d.created_at <= %s AND {decommission.REAL_CALL}
+                                  GROUP BY d.policy_id, d.decision""", (since, until))
+    previous = await db.fetch_all(f"""SELECT d.decision, count(*) AS n FROM decisions d
+                                      WHERE d.created_at >= %s AND d.created_at < %s AND {decommission.REAL_CALL}
+                                      GROUP BY d.decision""", (since - timedelta(hours=hours), since))
+    return {"window_hours": hours, "since": since.isoformat(), "until": until.isoformat(),
+            "rows": [{"policy_id": row["policy_id"], "decision": row["decision"], "n": int(row["n"])} for row in rows],
+            "previous": [{"decision": row["decision"], "n": int(row["n"])} for row in previous]}
 
 
 async def policy_deployment_evidence() -> dict | None:
@@ -1876,6 +1907,19 @@ async def endpoint_managed_activate(endpoint_id: str, request: ManagedActivation
                                     user: dict = Depends(admin_caller)) -> dict:
     try:
         return await endpoint_plane.activate_managed(endpoint_id, user["principal"], request.policy_hash, request.note)
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+class ManagedQuarantine(StrictModel):
+    note: str = Field(min_length=4, max_length=1000)
+
+
+@app.post("/api/endpoint/devices/{endpoint_id}/quarantine")
+async def endpoint_managed_quarantine(endpoint_id: str, request: ManagedQuarantine,
+                                      user: dict = Depends(admin_caller)) -> dict:
+    try:
+        return await endpoint_plane.quarantine_managed(endpoint_id, user["principal"], request.note)
     except (ValueError, PermissionError) as exc:
         raise HTTPException(409, str(exc)) from exc
 

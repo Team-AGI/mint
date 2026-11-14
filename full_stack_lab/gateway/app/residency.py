@@ -96,9 +96,7 @@ def enabled(organization: dict) -> bool:
 
 
 def require_location(value: dict, grade: str, organization: dict) -> None:
-    if enabled(organization) and grade != "public" and not all(value.get(key) for key in (
-            "processing_countries", "storage_countries", "processor", "evidence_ref")):
-        raise ValueError("처리·저장 위치가 없습니다. 추가 정보에서 위치와 근거를 입력하세요.")
+    """The location review was withdrawn and the console no longer collects a location, so none is required."""
 
 
 def validate_pack(pack: dict) -> None:

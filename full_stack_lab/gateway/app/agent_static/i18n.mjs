@@ -9,9 +9,11 @@ export function lang() {
   try { return localStorage.getItem(LANG_KEY) === "en" ? "en" : "ko"; } catch { return "ko"; }
 }
 export const locale = () => (lang() === "en" ? "en-US" : "ko-KR");
-export const clockText = (date, options = {}) => date.toLocaleTimeString(locale(), lang() === "en" ? { hourCycle: "h23", ...options } : options);
+export const clockText = (date, options = {}) => date.toLocaleTimeString(locale(), { hourCycle: "h23", ...options });
+const two = (n) => String(n).padStart(2, "0");
 export const dateTimeText = (date) => (lang() === "en"
-  ? date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "medium", hourCycle: "h23" }) : date.toLocaleString("ko-KR"));
+  ? date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "medium", hourCycle: "h23" })
+  : `${date.getFullYear()}.${two(date.getMonth() + 1)}.${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`);
 
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export function makeTranslator(dictionary) {

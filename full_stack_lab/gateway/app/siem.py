@@ -150,11 +150,16 @@ async def deliver_one(config):
 
 async def status():
     from . import db
-    return await db.fetch_one(
+    row = await db.fetch_one(
         """SELECT count(*) FILTER (WHERE delivered_at IS NULL) AS pending,
            count(*) FILTER (WHERE delivered_at IS NULL AND attempts>0) AS retrying,
            min(created_at) FILTER (WHERE delivered_at IS NULL) AS oldest_pending,
            max(delivered_at) AS last_delivered FROM siem_outbox""")
+    try:
+        configured = settings() is not None
+    except ValueError:
+        configured = False
+    return {**row, "configured": configured}
 
 
 async def watch():

@@ -402,7 +402,7 @@ async def me(authorization: str | None = Header(default=None)):
     return {**console_user(user), "synthetic": not field,
             "managed_required": user["managed_required"],
             "managed_devices": await db.fetch_all(
-                "SELECT endpoint_id,managed_state,status,heartbeat_at FROM endpoint_agents WHERE owner_token=%s AND device_epoch IS NOT NULL",
+                "SELECT endpoint_id,hostname,managed_state,status,heartbeat_at,last_seen_at FROM endpoint_agents WHERE owner_token=%s AND device_epoch IS NOT NULL",
                 (user["principal"],)),
             "git_url": git_url.rstrip("/") + f"/{GITEA_ORG}" if git_url else "", "kit": await pc_kit() if field else None}
 
@@ -1257,11 +1257,11 @@ async def gateway_proxy(path: str, authorization: str | None, method: str = "GET
 # 역할이 볼 수 있는 화면. 숨기기만 하는 메뉴는 통제가 아니라 장식이므로
 # /api/console이 이 목록을 기준으로 데이터 자체를 빼고 응답한다.
 PAGES_BY_ROLE = {
-    # 직원·협력사 직원에게 필요한 것은 "내 호출이 어떻게 판정됐는가"와 "쓰고 싶은
-    # MCP를 신청하는 길"이다. 조직 전체의 기록·정책·종료 판정은 관리자 몫이다.
-    "partner": ("activity", "consent", "intake"),
-    "employee": ("activity", "consent", "intake"),
-    "admin": ("overview", "activity", "security", "servers", "people", "endpoints", "policy", "intake", "termination", "consent"),
+    # 직원·협력사 직원에게 필요한 것은 "쓸 수 있는 MCP와 내 동의·신청"과 "내 호출이 어떻게
+    # 판정됐는가"다. 조직 전체의 기록·정책·종료 판정은 관리자 몫이다.
+    "partner": ("my", "activity"),
+    "employee": ("my", "activity"),
+    "admin": ("overview", "inbox", "activity", "intake", "servers", "connections", "termination", "people", "endpoints", "policy", "my"),
 }
 ROLE_LABELS = {"partner": "협력업체 직원", "employee": "직원", "admin": "관리자"}
 
@@ -1401,6 +1401,24 @@ async def internal_archive_digest(client: httpx.AsyncClient, path: str, commit: 
         spool.close()
 
 
+async def keep_approved_branch(client: httpx.AsyncClient, path: str, default: str) -> None:
+    """The internal copy is the verified commit, not the upstream's work in progress: other branches are removed."""
+    for _ in range(100):
+        listed = await client.get(f"{path}/branches", params={"page": 1, "limit": 50})
+        others = [b["name"] for b in (listed.json() if listed.is_success else []) if b.get("name") != default]
+        if not others:
+            return
+        for branch in others:
+            await client.delete(f"{path}/branches/{quote(branch, safe='')}")
+
+
+def internal_repo_description(previous: str, row: dict) -> str:
+    """One upstream repository can hold several approved servers (fetch, time …): keep the names already listed."""
+    names = set(previous.split(" · ")[:-1]) if " · 검증 커밋 " in (previous or "") else set()
+    names.add(row.get("display_name") or "MCP")
+    return f"{' · '.join(sorted(names))} · 검증 커밋 {row['commit_sha'][:12]}"
+
+
 async def publish_internal_repo(row: dict) -> tuple[str, dict]:
     """검증한 공개 GitHub 저장소를 이 기기의 Gitea `mcp` 조직으로 가져온다.
 
@@ -1443,10 +1461,11 @@ async def publish_internal_repo(row: dict) -> tuple[str, dict]:
                 raise ProvenanceMismatch(f"기록한 해시 {str(recorded)[:12]} · 사본 해시 {actual['sha256'][:12]}")
             checked = {"match": True, "source": "internal-repo-archive", "sha256": actual["sha256"],
                        "files": actual["files"], "bytes": actual["bytes"]}
+            await keep_approved_branch(client, path, info["default_branch"])
             published = await client.patch(path, json={
                 "private": False, "has_issues": True, "has_pull_requests": False, "has_wiki": False,
                 "website": row["repository_url"],
-                "description": f"{row.get('display_name') or name} · 검증 커밋 {row['commit_sha'][:12]}"})
+                "description": internal_repo_description(info.get("description") or "", row)})
             if not published.is_success:
                 raise HTTPException(502, f"직원 읽기 권한 게시 실패 (Gitea {published.status_code}).")
     except httpx.HTTPError as exc:
@@ -2132,7 +2151,8 @@ async def approved_mcp_rows(user: dict, server_id: str | None = None) -> list[di
             continue
         approved_tools = [{"name": name, "action": action if action in {"r", "w", "x"} else None,
                            "purpose": ((spec.get("tool_reviews") or {}).get(name) or {}).get("purpose", ""),
-                           "scope_reviewed": bool((spec.get("tool_reviews") or {}).get(name))}
+                           "scope_reviewed": bool((spec.get("tool_reviews") or {}).get(name)),
+                           "consent": bool(((spec.get("tool_reviews") or {}).get(name) or {}).get("consent"))}
                           for name, action in (spec.get("tools") or {}).items()]
         approved.append({**row, "valid_until": until.isoformat(), "tools": approved_tools,
                          "execution": "remote" if remote else "pc" if spec.get("local") else
@@ -2960,7 +2980,7 @@ async def approve(approval_id: UUID, request: ApprovalWindow | None = None, auth
 # every authorisation decision stays with the Gateway. Only these prefixes pass.
 GATEWAY_PROXY_PREFIXES = ("overview", "latency", "activity", "registry", "health", "termination/", "approvals/",
                           "catalog/", "enforcement", "monitor/", "audit/", "policy/", "endpoint/",
-                          "supply-chain/", "risk-catalog", "lab/", "dispatch-intents", "suspensions", "user-suspensions/")
+                          "supply-chain/", "risk-catalog", "lab/", "dispatch-intents", "suspensions", "user-suspensions/", "ops/")
 # Several Gateway read APIs are open to any authenticated caller; the Console adds
 # the role boundary here so an employee's session cannot read the organisation's
 # registry, policy ledger or endpoint inventory through it.
