@@ -721,6 +721,10 @@ def harness_process(command_line: str) -> bool:
     words = [word.strip("\"'") for word in re.findall(r'''"[^"]*"|'[^']*'|\S+''', command_line)]
     if not words:
         return False
+    # The Codex desktop app's own processes (its app-server starts with `-c ...mcp_servers...` overrides) are the vendor
+    # harness, the same bundle the config scan already leaves out (vendor_bundled), not a server someone added.
+    if VENDOR_BUNDLED.search(words[0].replace("\\", "/").lower()):
+        return True
     # A basename is not file identity: a renamed Python interpreter can run FastMCP.
     entry = os.path.normcase(os.path.realpath(shutil.which(words[0]) or words[0]))
     paths = CONFIG.get("ENDPOINT_HARNESS_PATHS", [])
@@ -1341,6 +1345,10 @@ def demo() -> None:
     assert vendor_bundled(codex, {"command": "C:\\Users\\a\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\x\\bin\\node_repl.exe"})
     assert not vendor_bundled(codex, {"command": "C:\\Tools\\venv\\Scripts\\pyghidra-mcp.exe"})
     assert not vendor_bundled(Path("C:/Users/a/.claude.json"), {"command": "C:\\Program Files\\WindowsApps\\OpenAI.Codex_1\\app\\ChatGPT.exe"})
+    app_server = ('"C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1106.6628.0_x64__2p2nqsd0c76g0\\app\\resources\\codex.exe" '
+                  '-c features.code_mode_host=true app-server -c plugins.codex-app-tools@openai-bundled.mcp_servers.codex.x=1')
+    assert PROCESS_MARKERS.search(app_server) and harness_process(app_server)
+    assert not harness_process('"C:\\Tools\\venv\\Scripts\\python.exe" -m mcp_server_git')
 
     # 훅 기록 줄: 알려진 필드와 형식만 보내고, 형식이 다른 줄은 버린다.
     good = {"event_id": "e" * 32, "called_at": "2026-10-31T00:00:00+00:00", "harness": "codex", "account": "a", "server": "ghidra",
