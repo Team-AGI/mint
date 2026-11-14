@@ -48,7 +48,7 @@ POLICY_PATH = Path(os.getenv("POLICY_PATH", "/policy/policy.rego"))
 # What OPA serves from /policy, including the integrated PAC pack and its decision contract.
 POLICY_BUNDLE = ("policy.rego", "pac15.rego", "decision.rego", "data.json", "policy_ledger.json", "residency.json")
 APPROVAL_TTL_MINUTES = 10
-# How long an approved call stays usable (11-14). 0 = one use, valid for APPROVAL_ONE_USE_MINUTES.
+# How long an approved call stays usable. 0 = one use, valid for APPROVAL_ONE_USE_MINUTES.
 APPROVAL_WINDOWS = (0, 10, 30)
 APPROVAL_WINDOW_DEFAULT = 30
 APPROVAL_ONE_USE_MINUTES = 10
@@ -2671,7 +2671,7 @@ async def _open_grant(user_token: str, server_id: str, tool: str, review_item: d
 async def approve_request(approval_id: str, reviewer_token: str, reason: str | None = None,
                           evidence_sha256: str | None = None, window_minutes: int = APPROVAL_WINDOW_DEFAULT) -> dict:
     """Open an approval window for the requester and this tool. The gateway does not run the stored call:
-    its answer would reach nobody, and the agent's own retry would run it a second time (11-14)."""
+    its answer would reach nobody, and the agent's own retry would run it a second time."""
     if window_minutes not in APPROVAL_WINDOWS:
         raise ValueError("사용 기간은 1회, 10분, 30분 중 하나여야 합니다.")
     if window_minutes and ((await db.fetch_one("SELECT action FROM decisions WHERE approval_id=%s ORDER BY id LIMIT 1",

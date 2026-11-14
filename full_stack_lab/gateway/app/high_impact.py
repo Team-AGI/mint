@@ -48,7 +48,7 @@ WINDOW_MAX_USES = 50
 
 def window(approval: dict | None) -> bool:
     """A period approval (10 or 30 minutes): the requester's calls to that tool, any arguments, for the reasons
-    the approver saw. A one-use approval stays bound to the exact request, as before (11-14)."""
+    the approver saw. A one-use approval stays bound to the exact request, as before."""
     return bool(approval and approval.get("window_minutes"))
 
 
