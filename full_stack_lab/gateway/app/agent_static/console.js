@@ -2725,8 +2725,13 @@ const alertsTab = (alertData, q) => alertData ? html`${kv([["기간", q.get("hou
 let policyEvidence = {};
 let organizationPolicies = [];
 const organizationImplementation = (p) => ({ rego: "판정 코드", "rego+sensor": "판정 코드와 입력 연동", solution: "솔루션 기능" }[p.implementation] || "—");
-const organizationCode = (p) => p.has_rule ? "판정 코드 있음" : p.category === "excluded" ? "적용 범위 제외"
-  : p.implementation === "solution" ? "기능별 확인 필요" : "코드 미확인";
+const organizationCode = (p) => p.has_rule ? (p.rule_runtime ? "작성·운영 적용" : "작성·운영 미적용") : p.category === "excluded" ? "적용 범위 제외"
+  : p.implementation === "solution" ? "해당 없음" : "미작성";
+const ORG_STATUS = { 구현: ["allow", "구현"], 부분: ["alert", "부분 구현"], 없음: ["block", "미구현"], "구조적 차단": ["plain", "구조적 차단"] };
+const organizationStatus = (p) => chip(...(ORG_STATUS[p.status] || ["outline", "미확인"]));
+const organizationRuntime = (p) => (p.runtime_rule_ids || []).length ? `대응 규칙 ${p.runtime_rule_ids.length}개`
+  : p.implementation === "solution" ? "솔루션 기능" : "운영 판정 없음";
+const organizationSummary = (s) => s?.status ? Object.entries(ORG_STATUS).map(([k, [, label]]) => `${label} ${s.status[k] ?? 0}`).join(" · ") : "";
 
 const policyExecutor = (p) => ({ opa: "정책 엔진", gateway: "게이트웨이", endpoint: "엔드포인트", vendor: "벤더" }[p.enforced_by] || "—");
 const policyEnvironment = (env) => ({ prod: "운영 환경", stage: "사전 검증 환경", dev: "개발 환경" }[env] || "—");
@@ -2791,13 +2796,13 @@ ROUTES.policy = async (_, tab) => {
         data-mode="${enforcement === "enforce" ? "monitor" : "enforce"}">${enforcement === "enforce" ? "관찰 모드로 전환" : "집행 모드로 전환"}</button>` }),
       active: tab === "organization" ? "organization" : "ledger",
       tabs: [{ key: "organization", label: "전체 보안 정책", n: organizationPolicies.length, body:
-        panel("전체 보안 정책", html`<table class="data"><thead><tr><th>번호</th><th>정책 대상</th><th>적용 단계</th><th>구현 방식</th><th>코드 확인</th><th>조직 적용 확인</th></tr></thead><tbody id="organization-policy-list">
+        panel("전체 보안 정책", html`<table class="data"><thead><tr><th>번호</th><th>정책 대상</th><th>적용 단계</th><th>구현 상태</th><th>운영 판정</th><th>한계</th></tr></thead><tbody id="organization-policy-list">
           ${organizationPolicies.map((p) => html`<tr class="clickable" tabindex="0" data-act="organization-policy" data-id="${p.id}">
-            <td class="mono">${p.id}</td><td>${p.name}</td><td>${p.stage}</td><td>${organizationImplementation(p)}</td>
-            <td>${organizationCode(p)}</td><td>${chip("outline", "미확인")}</td></tr>`)}
+            <td class="mono">${p.id}</td><td>${p.name}</td><td>${p.stage}</td><td>${organizationStatus(p)}</td>
+            <td>${organizationRuntime(p)}</td><td class="small">${short(p.limitation || "—", 80)}</td></tr>`)}
           </tbody></table><p class="empty" role="status" data-list-empty="organization-policy-list" hidden>조건에 맞는 결과 없음</p>
           ${organizationPolicies.length ? "" : empty(ledger.organization?.source_state === "available" ? "등록된 조직 정책 없음" : "조직 정책 원본 조회 실패")}`,
-          { flush: true, tools: listToolbar("organization-policy-list", "정책 번호·대상·단계 검색") }) },
+          { flush: true, sub: organizationSummary(ledger.organization?.summary), tools: listToolbar("organization-policy-list", "정책 번호·대상·단계 검색") }) },
         { key: "ledger", label: "보안 통제 규칙", n: policyLedger.length, body: html`<div class="stack">
         ${panel(html`<span class="policy-load-title"><span>정책 로드 상태</span><span class="sub">${ledger.record_window_hours === 24 ? "최근 24시간" : "—"}</span></span>`, html`<div class="policy-load-details">${kv([
           [html`<span title="MINT 게이트웨이의 배포 대상 Rego 규칙 코드와 OPA에 실제로 로드된 대응 규칙 코드가 일치하는지 해시로 비교합니다.">룰셋 일치 여부</span>`, policyDeployLabel(ledger, "rules_match")],
@@ -3596,15 +3601,15 @@ const ACTIONS = {
   "organization-policy"(el) {
     const p = organizationPolicies.find((row) => row.id === el.dataset.id);
     if (!p) return;
-    const candidates = (p.candidate_rule_ids || []).filter((id) => policyLedger.some((rule) => rule.policy_id === id));
+    const candidates = (p.runtime_rule_ids || []).filter((id) => policyLedger.some((rule) => rule.policy_id === id));
     openDrawer(p.id, html`<b>${p.name}</b>`, [
       { key: "definition", label: "정책 정의", body: kv([["정책 번호", p.id], ["적용 단계", p.stage], ["정책 대상", p.name],
         ["정책 내용", p.content], ["적용 조건", p.condition], ["통과 요건", p.pass_condition], ["차단 요건", p.block_condition],
         ["필요 증빙", p.required_evidence]]) },
-      { key: "implementation", label: "구현과 적용", body: kv([["구현 방식", organizationImplementation(p)], ["코드 확인", organizationCode(p)],
-        ["시험 정의", p.has_test_definition ? "시험 정의 있음" : "시험 정의 미확인"],
-        ["시험 실행 확인", "미확인"], ["조직 적용 확인", "미확인"], ["보안 통제 규칙 매핑", "검토 필요"]]) },
-      { key: "rules", label: "보안 통제 규칙 검토 후보", body: html`${candidates.length ? html`<div class="row-actions">${candidates.map((id) => html`<button class="btn" type="button" data-act="policy" data-id="${id}">${policyLedger.find((rule) => rule.policy_id === id).name}</button>`)}</div>` : empty("확인된 규칙 후보 없음")}` },
+      { key: "implementation", label: "구현과 적용", body: kv([["구현 상태", organizationStatus(p)], ["한계", p.limitation || "—"],
+        ["운영 판정", organizationRuntime(p)], ["구현 방식", organizationImplementation(p)], ["정책 규칙", organizationCode(p)],
+        ["시험 정의", p.has_test_definition ? "있음" : "없음"], ["조직 적용 확인", "미확인"]]) },
+      { key: "rules", label: "운영 대응 규칙", body: html`${candidates.length ? html`<div class="row-actions">${candidates.map((id) => html`<button class="btn" type="button" data-act="policy" data-id="${id}">${policyLedger.find((rule) => rule.policy_id === id).name}</button>`)}</div>` : empty("운영 대응 규칙 없음")}` },
     ]);
   },
   policy(el) {

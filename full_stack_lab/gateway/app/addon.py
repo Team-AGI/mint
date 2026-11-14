@@ -38,7 +38,11 @@ async def decide(user: dict, request: dict) -> dict:
     arguments = outcome.get("effective_arguments")
     return {
         "decision": decision, "allow": decision in ALLOWED and bool(outcome.get("decision_id")),
-        "policy_id": outcome.get("policy_id"), "reason": outcome.get("reason"),
+        "policy_id": outcome.get("policy_id"),
+        # 이 경로는 승인 요청을 만들지 않는다(승인되면 이 게이트웨이가 대신 보내 이중 전송이 된다). 막다른 길로 두지 않고 갈 곳을 알린다.
+        "reason": (f"{outcome.get('reason') or ''} 이 경로에서는 관리자 승인을 요청할 수 없습니다. "
+                   "MINT 게이트웨이 주소(/mcp/<서버>/)로 호출하면 승인 대기 후 실행됩니다.").strip()
+                  if decision == "Approval" else outcome.get("reason"),
         "decision_id": outcome.get("decision_id"),
         # 제한 실행이면 게이트웨이는 이 인자로 보내야 한다. 바뀐 것이 없으면 생략.
         "effective_arguments": arguments if decision in ALLOWED and arguments != request["arguments"] else None,
