@@ -333,6 +333,26 @@ pac13_approved if {
     a.feature_id == input.request.feature_id
     a.action == input.request.action
     within(input.facts.now_ns, a.valid_from_ns, a.valid_until_ns)
+    object.get(a, "window", false) != true
+}
+
+# PAC-13 approval window: an administrator approved this requester's use of this tool for a period.
+# Every other PAC still evaluates the actual request; only the per-request digest is not required.
+pac13_approved if {
+    a := input.facts.individual_approval
+    a.window == true
+    a.verified == true
+    a.approver_authorized == true
+    is_string(a.approver_id)
+    trim_space(a.approver_id) != ""
+    a.approver_id != input.facts.identity.user_id
+    a.user_id == input.facts.identity.user_id
+    a.single_use_reserved == true
+    a.status == "APPROVED"
+    a.server_id == input.request.server_id
+    a.feature_id == input.request.feature_id
+    a.action == input.request.action
+    within(input.facts.now_ns, a.valid_from_ns, a.valid_until_ns)
 }
 
 approval_needed if {

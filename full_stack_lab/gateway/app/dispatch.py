@@ -17,9 +17,10 @@ from .contract import canonical_hash
 
 # Sent and not answered: recorded as such (timeout, lost response), or still marked
 # pending after its reservation is gone, which means the process that sent it is gone.
-UNSETTLED = """(i.state = 'uncertain' OR (i.state = 'pending' AND NOT EXISTS (
+# Only a write can do harm twice: an unanswered read may simply be retried, so nobody is asked to confirm it.
+UNSETTLED = """(i.action IN ('w','x') AND (i.state = 'uncertain' OR (i.state = 'pending' AND NOT EXISTS (
         SELECT 1 FROM call_reservations r
-         WHERE r.request_id = i.request_id AND r.released_at IS NULL AND r.expires_at > now())))"""
+         WHERE r.request_id = i.request_id AND r.released_at IS NULL AND r.expires_at > now()))))"""
 
 OUTCOMES = {"executed": "confirmed_executed", "not_executed": "confirmed_not_executed"}
 IDEMPOTENCY_TTL_SECONDS = int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "86400"))
@@ -128,14 +129,27 @@ async def record(request_id: str, action: str, approval_id: str | None = None, *
                 # the intent the fingerprint and principal of this one. The digest the policy checks
                 # binds high-risk calls only; this binds every approved call.
                 row = await (await connection.execute(
-                    """SELECT a.request_payload, i.fingerprint, i.user_token FROM approvals a, dispatch_intents i
-                        WHERE a.id = %s AND i.request_id = %s""", (approval_id, request_id))).fetchone()
+                    """SELECT a.request_payload, a.window_minutes, i.fingerprint, i.user_token, i.server_id, i.tool_name
+                         FROM approvals a, dispatch_intents i WHERE a.id = %s AND i.request_id = %s""",
+                    (approval_id, request_id))).fetchone()
                 approved = (row or {}).get("request_payload") or {}
-                if not row or row["user_token"] != approved.get("user_token") or row["fingerprint"] != canonical_hash(
+                if not row or row["user_token"] != approved.get("user_token"):
+                    raise _Refused("approval")
+                if row.get("window_minutes"):
+                    # An approval window covers this requester's calls to the approved tool, any arguments.
+                    if (row["server_id"], row["tool_name"]) != (approved.get("server_id"), approved.get("tool")):
+                        raise _Refused("approval")
+                    if not (await connection.execute(
+                            """UPDATE approvals SET uses = uses + 1 WHERE id = %s AND status = 'APPROVED'
+                                AND revoked_at IS NULL AND valid_until > clock_timestamp() AND uses < %s""",
+                            (approval_id, high_impact.WINDOW_MAX_USES))).rowcount:
+                        raise _Refused("approval")
+                    return None
+                if row["fingerprint"] != canonical_hash(
                         {"server": approved.get("server_id"), "tool": approved.get("tool"), "arguments": approved.get("arguments")}):
                     raise _Refused("approval")
                 if not (await connection.execute(
-                        "UPDATE approvals SET status = 'UNCONFIRMED' WHERE id = %s AND status = 'APPROVED' AND revoked_at IS NULL AND expires_at > clock_timestamp()",
+                        "UPDATE approvals SET status = 'UNCONFIRMED', uses = uses + 1 WHERE id = %s AND status = 'APPROVED' AND revoked_at IS NULL AND COALESCE(valid_until, expires_at) > clock_timestamp()",
                         (approval_id,))).rowcount:
                     raise _Refused("approval")
         return None

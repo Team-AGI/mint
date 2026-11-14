@@ -276,7 +276,7 @@ def sections(summary):
     ]
 
 
-DECISIONS = {"Allow": "허용", "Alert": "경보", "Restrict": "제한", "Block": "차단"}
+DECISIONS = {"Allow": "허용", "Alert": "경보", "Restrict": "제한", "Block": "차단", "Approval": "승인 대기"}
 
 
 def call_verdict(call):
@@ -285,8 +285,13 @@ def call_verdict(call):
 
 
 def call_outcome(call):
-    """What happened to the tool itself, apart from the decision: an alert can still fail, a block never ran."""
-    if call.get("decision") == "Block":
+    """What happened to the tool itself, apart from the decision: an alert can still fail, a block never ran
+    unless the ledger says it did (an answer withheld after running, a send left unanswered)."""
+    if call.get("upstream_executed") and call.get("decision") == "Block":
+        return "실행됨"
+    if call.get("upstream_attempted") and not call.get("upstream_executed"):
+        return "실행 미확인"
+    if call.get("decision") in ("Block", "Approval"):
         return "실행 안 함"
     return "실패" if call.get("failed") else "완료"
 

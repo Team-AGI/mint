@@ -1338,11 +1338,15 @@ function approvalHistory() {
   const history = approvalHistoryRows;
   return panel("승인 처리 이력", history.length ? html`<table class="data"><thead><tr><th>요청자</th><th>도구</th><th>결과</th><th>처리 시각</th><th>검토자</th></tr></thead><tbody>
             ${history.map((h) => html`<tr class="clickable" tabindex="0" data-act="${h.explanation ? "approval" : ""}" data-id="${h.id}"><td class="who-cell"><b>${h.display_name || h.requested_by}</b><span class="sub">${h.department || ""}</span></td>
-              <td><code>${h.server_id}.${h.tool}</code></td><td>${chip(...(APPROVAL_STATUS[h.status] || ["", h.status]))}</td>
+              <td><code>${h.server_id}.${h.tool}</code></td><td>${chip(...(h.status === "APPROVED" && h.valid_until && !h.window_open ? ["outline", "승인 기간 종료"] : APPROVAL_STATUS[h.status] || ["", h.status]))}<span class="sub">${approvalWindowText(h)}</span></td>
               <td class="small nowrap">${when(h.reviewed_at || h.created_at)}</td><td class="small">${h.reviewed_by || "—"}
-                ${h.explanation && h.can_revoke && ["APPROVED", "UNCONFIRMED", "EXECUTED", "NOT_EXECUTED"].includes(h.status) ? html`<button class="btn sm danger" data-act="approval-revoke" data-id="${h.id}">승인 번복</button>` : ""}</td></tr>`)}</tbody></table>` : empty("처리 이력 없음"), { flush: true, sub: "최근 50건", status: approvalFailed ? chip("alert", "갱신 실패") : "",
+                ${h.window_open ? html`<button class="btn sm danger" data-act="approval-close" data-id="${h.id}">승인 종료</button>`
+                  : h.explanation && h.can_revoke && ["APPROVED", "UNCONFIRMED", "EXECUTED", "NOT_EXECUTED"].includes(h.status) ? html`<button class="btn sm danger" data-act="approval-revoke" data-id="${h.id}">승인 번복</button>` : ""}</td></tr>`)}</tbody></table>` : empty("처리 이력 없음"), { flush: true, sub: "최근 50건", status: approvalFailed ? chip("alert", "갱신 실패") : "",
       end: html`<button class="btn sm" data-act="approval-refresh">새로고침</button>` });
 }
+
+const APPROVAL_WINDOW_FIELD = () => field.select("window_minutes", "사용 기간", { 30: "30분", 10: "10분", 0: "1회" }, "30");
+const approvalWindowText = (h) => h.window_open ? `${h.window_minutes ? `${when(h.valid_until)}까지` : "1회 남음"} · ${h.uses || 0}회 사용` : (h.valid_until ? `${h.uses || 0}회 사용` : "");
 
 const IMPACT_DOMAIN = { employment: "고용·급여", credit: "신용", legal: "법적 효력", benefits: "급부", contract: "계약", service_access: "서비스 접근" };
 function impactExplanation(e) {
@@ -1359,7 +1363,7 @@ async function showApproval(id) {
   const a = approvalRows.find((row) => row.id === id);
   if (!a) return;
   const controls = a.pending ? html`<button class="btn danger" data-act="reject" data-id="${a.id}">거부</button>
-    ${a.own ? chip("outline", "본인 요청") : html`<button class="btn primary" data-act="approve" data-id="${a.id}">승인·실행</button>`}` : "";
+    ${a.own ? chip("outline", "본인 요청") : html`<button class="btn primary" data-act="approve" data-id="${a.id}">승인</button>`}` : "";
   if (a.explanation) {
     const bundle = await gw(`approvals/${id}/evidence`);
     const kinds = { "call-request": "요청", "call-explanation-view": "설명 열람", "call-approve": "승인", "call-reject": "거부", "call-revoke": "번복" };
@@ -3159,16 +3163,18 @@ const ACTIONS = {
     let r;
     if (a?.explanation) {
       const b = await gw(`approvals/${a.id}/evidence`);
-      const fd = await ask({ title: "중대 영향 호출 승인", fields: html`${impactExplanation(b.explanation)}
-        <label class="check"><input type="checkbox" name="confirmed" required /> 요청 범위·정책 근거 확인</label>`, confirm: "승인·실행" });
+      const fd = await ask({ title: "중대 영향 호출 승인", fields: html`${impactExplanation(b.explanation)}${APPROVAL_WINDOW_FIELD()}
+        <label class="check"><input type="checkbox" name="confirmed" required /> 요청 범위·정책 근거 확인</label>`, confirm: "승인" });
       if (!fd) return;
-      r = await gw(`approvals/${a.id}/approve`, { method: "POST", body: { evidence_sha256: b.evidence_sha256, reason: "scope_confirmed" } });
+      r = await gw(`approvals/${a.id}/approve`, { method: "POST", body: { evidence_sha256: b.evidence_sha256, reason: "scope_confirmed",
+        window_minutes: Number(fd.get("window_minutes") ?? 30) } });
     } else {
-      if (!await ask({ title: "호출 승인", body: "승인하면 이 호출을 실행합니다.",
-        fields: kv([["도구", `${a.server_id}.${a.tool}`], ["승인 사유", a.reason || "—"]]), confirm: "승인·실행" })) return;
-      r = await api(`/approvals/${el.dataset.id}/approve`, { method: "POST" });
+      const fd = await ask({ title: "호출 승인", fields: html`${kv([["도구", `${a.server_id}.${a.tool}`], ["승인 사유", a.reason || "—"]])}${APPROVAL_WINDOW_FIELD()}`,
+        confirm: "승인" });
+      if (!fd) return;
+      r = await api(`/approvals/${el.dataset.id}/approve`, { method: "POST", body: { window_minutes: Number(fd.get("window_minutes") ?? 30) } });
     }
-    toast(`승인했습니다 · ${DECISION[r.decision]?.[1] || r.decision || "처리됨"}`);
+    toast(`승인했습니다 · ${r.window_minutes ? `${r.window_minutes}분 동안` : "1회"} 사용할 수 있습니다`);
     reload(); refreshBadges();
   },
   async "intent-resolve"(el) {
@@ -3197,6 +3203,11 @@ const ACTIONS = {
     if (!await ask({ title: "승인 번복", fields: impactExplanation(b.explanation), confirm: "승인 판단 변경 · 번복", danger: true })) return;
     await gw(`approvals/${el.dataset.id}/revoke`, { method: "POST", body: { evidence_sha256: b.evidence_sha256 } });
     toast("번복을 기록했습니다."); reload();
+  },
+  async "approval-close"(el) {
+    if (!await ask({ title: "승인 종료", body: "남은 사용 기간을 지금 끝냅니다. 이후 호출은 다시 승인을 받아야 합니다.", confirm: "종료", danger: true })) return;
+    await gw(`approvals/${el.dataset.id}/revoke`, { method: "POST" });
+    toast("승인을 종료했습니다."); reload();
   },
   async "approval-export"(el) {
     const b = await gw(`approvals/${el.dataset.id}/evidence`);
