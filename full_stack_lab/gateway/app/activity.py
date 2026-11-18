@@ -202,30 +202,34 @@ async def analysis(user_token: str | None = None, decision: str | None = None,
                    endpoint: str | None = None, policy: str | None = None,
                    since: datetime | None = None, until: datetime | None = None,
                    query: str | None = None, principal: str | None = None,
-                   trace_id: str | None = None, before: int = 0) -> dict:
+                   trace_id: str | None = None, before: int = 0, *, series_only: bool = False) -> dict:
     clauses, params = filter_predicates(user_token, decision, server, person, event_kind, execution,
                                         endpoint, policy, since, until, query, principal, trace_id, before)
     where = " AND ".join(clauses) or "true"
     joins = "FROM decisions d LEFT JOIN principals p ON p.token = d.user_token"
     args = tuple(params)
-    bounds = await db.fetch_one(
-        f"SELECT count(*) AS n, min(d.created_at) AS first, max(d.created_at) AS last {joins} WHERE {where}", args)
-    total = int(bounds["n"] or 0)
-    if not total:
-        return {"total": 0, "bucket": "hour", "series": [], "responses": [],
+    bounds = await db.admin_fetch_one(
+        f"SELECT min(d.created_at) AS first, max(d.created_at) AS last {joins} WHERE {where}", args)
+    timeline = {"total": 0, "bucket": "hour", "series": []}
+    if bounds["first"] is not None:
+        span = (bounds["last"] - bounds["first"]).total_seconds()
+        unit = "hour" if span <= 172800 else "day" if span <= 10368000 else "month"
+        series = await db.admin_fetch_all(
+            f"""SELECT date_trunc('{unit}', d.created_at AT TIME ZONE 'Asia/Seoul') AS at,
+                       d.decision, count(*) AS n
+                  {joins} WHERE {where} GROUP BY 1, 2 ORDER BY 1""", args)
+        timeline = {"total": sum(row["n"] for row in series), "bucket": unit, "series": series}
+    if series_only:
+        return timeline
+    if not timeline["total"]:
+        return {**timeline, "responses": [],
                 "hours": [], "harnesses": [], "servers": [], "people": [],
                 "policies": [], "endpoints": [], "flows": []}
-    span = (bounds["last"] - bounds["first"]).total_seconds()
-    unit = "hour" if span <= 172800 else "day" if span <= 10368000 else "month"
-    series_rows = await db.fetch_all(
-        f"""SELECT date_trunc('{unit}', d.created_at AT TIME ZONE 'Asia/Seoul') AS bucket,
-                    d.decision, count(*) AS n
-               {joins} WHERE {where} GROUP BY 1, 2 ORDER BY 1""", args)
-    hour_rows = await db.fetch_all(
+    hour_rows = await db.admin_fetch_all(
         f"""SELECT extract(hour FROM d.created_at AT TIME ZONE 'Asia/Seoul')::int AS hour,
                     d.decision, count(*) AS n
                {joins} WHERE {where} GROUP BY 1, 2 ORDER BY 1""", args)
-    response_rows = await db.fetch_all(
+    response_rows = await db.admin_fetch_all(
         f"""SELECT COALESCE(d.result_preview->>'disposition',
                     CASE WHEN d.upstream_executed AND d.policy_id='MCP-OUTPUT-001' THEN 'withheld'
                          WHEN d.upstream_executed THEN 'returned'
@@ -239,19 +243,19 @@ async def analysis(user_token: str | None = None, decision: str | None = None,
         "people": "COALESCE(p.display_name, d.user_token, '알 수 없음')",
     }
     for name, expression in dimensions.items():
-        dimension_rows[name] = await db.fetch_all(
+        dimension_rows[name] = await db.admin_fetch_all(
             f"""SELECT {expression} AS key, d.decision, count(*) AS n
                    {joins} WHERE {where} GROUP BY 1, 2""", args)
 
-    policy_rows = await db.fetch_all(
+    policy_rows = await db.admin_fetch_all(
         f"""SELECT COALESCE(d.policy_id, '') AS key, d.decision, count(*) AS n
               {joins} WHERE {where} AND d.decision IN ('Block', 'Alert') GROUP BY 1, 2""", args)
-    endpoint_rows = await db.fetch_all(
+    endpoint_rows = await db.admin_fetch_all(
         f"""SELECT COALESCE(NULLIF(d.client->>'workstation', ''), NULLIF(d.client->>'endpoint_id', ''),
                             NULLIF(d.client->>'device_id', ''), '') AS key,
                    d.decision, count(*) AS n, max(d.created_at) AS last_call
               {joins} WHERE {where} GROUP BY 1, 2""", args)
-    flow_rows = await db.fetch_all(
+    flow_rows = await db.admin_fetch_all(
         f"""SELECT COALESCE(NULLIF(d.client->'harness'->>'name', ''), NULLIF(d.client->>'agent', ''), '') AS harness,
                    COALESCE(d.server_id, '') AS server, d.decision, count(*) AS n
               {joins} WHERE {where} GROUP BY 1, 2, 3""", args)
@@ -278,8 +282,7 @@ async def analysis(user_token: str | None = None, decision: str | None = None,
         return ordered[:cap] + [other]
 
     return {
-        "total": total, "bucket": unit,
-        "series": [{"at": row["bucket"], "decision": row["decision"], "n": int(row["n"] or 0)} for row in series_rows],
+        **timeline,
         "hours": [{"hour": int(row["hour"]), "decision": row["decision"], "n": int(row["n"] or 0)} for row in hour_rows],
         "responses": [{"response": row["response"], "n": int(row["n"] or 0)} for row in response_rows],
         "harnesses": grouped(dimension_rows["harnesses"]),

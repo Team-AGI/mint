@@ -738,10 +738,11 @@ async def activity_analysis(decision: str | None = None, server: str | None = No
                             since: datetime | None = None, until: datetime | None = None,
                             q: str | None = None, user: dict = Depends(caller),
                             principal: str | None = Query(None, max_length=150), trace_id: str | None = Query(None, max_length=128),
-                            before: int = Query(0, ge=0)) -> dict:
+                            before: int = Query(0, ge=0), series_only: bool = False) -> dict:
+    """With series_only, return the filtered total, bucket size and time series."""
     own = None if "admin" in user["roles"] else user["principal"]
     return await activity.analysis(own, decision, server, person, event_kind, execution,
-                                   endpoint, policy, since, until, q, principal, trace_id, before)
+                                   endpoint, policy, since, until, q, principal, trace_id, before, series_only=series_only)
 
 
 @app.get("/.well-known/oauth-protected-resource")

@@ -17,7 +17,7 @@ x-gateway-build: &gateway-build
 
 x-gateway-env: &gateway-env
   DATABASE_URL: postgresql://mcp:${POSTGRES_PASSWORD:?}@db:5432/mcp_governance
-  # 판정 풀(tools/call). 관리 풀은 /api/overview·/api/latency·/api/health만 쓴다.
+  # 판정 풀(tools/call)과 콘솔 집계·상태 조회용 풀의 크기를 따로 제한한다.
   DB_POOL_MAX: ${DB_POOL_MAX:-10}
   DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-10}
   DB_POOL_MAX_WAITING: ${DB_POOL_MAX_WAITING:-0}
@@ -98,7 +98,7 @@ services:
   opa:
     image: openpolicyagent/opa:1.20.2-static@sha256:bb245e9e36be0d0ed486c240b606c56be7aba96014a4a87895fed4ba7a6dfa8d
     restart: unless-stopped
-    command: [run, --server, --addr=0.0.0.0:8181, --set=decision_logs.console=true, --log-level=info, /policy]
+    command: [run, --server, --addr=0.0.0.0:8181, --set=decision_logs.console=true, --log-level=info, /policy, /opa-log-mask.rego]
     healthcheck:
       test: ["CMD", "/opa", "eval", "1"]
       interval: 3s
@@ -106,6 +106,7 @@ services:
       retries: 20
     volumes:
       - ../full_stack_lab/opa:/policy:ro
+      - ./opa-log-mask.rego:/opa-log-mask.rego:ro
     networks: [policy]
 
   presidio-analyzer:
@@ -335,6 +336,8 @@ services:
 
   siem-worker:
     profiles: [siem]
+    deploy:
+      replicas: ${SIEM_WORKERS:-1}
     image: mcpgw/gateway:${MINT_VERSION}
     restart: unless-stopped
     command: ["python", "-m", "app.siem"]
