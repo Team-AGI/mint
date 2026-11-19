@@ -2068,4 +2068,12 @@ export const EN = {
   "호출 24시간": "Calls, 24h",
   "호출 · 차단 24시간": "Calls · blocks, 24h",
   "흔들림": "Jitter",
+  "GitHub 저장소 주소": "GitHub repository URL",
+  "추가 설정": "Additional settings",
+  "주소에서 자동 생성": "Generated from the URL",
+  "신청 정보": "Request details",
+  "출처·계약 정보": "Source and contract details",
+  "승인 범위": "Approval scope",
+  "사용 대상·기한": "Audience and duration",
+  "실행 인자·폴더·환경 변수": "Arguments, folders, and environment variables",
 };

@@ -31,8 +31,6 @@ export async function myRoute(c, tab, query) {
   const [pending, history] = consent;
   const rows = c.consentRows();
   const open = requests.filter((r) => OPEN_REQUEST.includes(r.status)).length;
-  const pre = { name: query.get("name") || "", purpose: query.get("purpose") || "", source: query.get("source") || "", asked: query.get("asked") || "" };
-  const fromRepo = /^https:\/\/github\.com\//.test(pre.source);
   const active = TABS.includes(tab) ? tab : "available";
   const tabs = [
     { key: "available", label: "사용 가능한 MCP", body: c.panel("사용 가능한 MCP",
@@ -42,7 +40,7 @@ export async function myRoute(c, tab, query) {
     { key: "mine", label: "전체 신청", n: requests.length, body: c.panel("내 신청", requests.length ? c.html`<table class="data"><thead><tr><th>서비스</th><th>상태</th><th>신청</th></tr></thead><tbody>
       ${requests.map((r) => c.html`<tr><td><b>${r.display_name}</b></td><td>${c.chip(...(c.INTAKE_STATUS[r.status] || ["", r.status]))}${r.status === "HOLD" && r.review_note ? c.html`<span class="sub">${c.short(r.review_note, 90)}</span>` : ""}</td>
         <td class="small nowrap">${c.when(r.created_at)}</td></tr>`)}</tbody></table>` : c.empty("신청 없음"), { flush: true }) },
-    { key: "new", label: "새 신청", body: c.intakeNewBody(pre, fromRepo, catalog) },
+    { key: "new", label: "새 신청", body: c.intakeNewBody(query, catalog) },
   ];
   const cards = c.html`<div class="kpis kpis-3 compact">${deviceCard(c)}
     <a class="kpi ${pending.n ? "alert" : ""}" href="#/my?t=consent"><div class="label">동의 필요</div><div class="value">${pending.n}</div></a>

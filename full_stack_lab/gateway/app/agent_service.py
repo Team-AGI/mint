@@ -26,7 +26,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
-from pydantic import Field
+from pydantic import Field, field_validator
 from psycopg.types.json import Jsonb
 
 from . import artifact_provenance, connections, consent, db, idp, oidc, provenance, registry, review, upstream, user_credentials
@@ -254,11 +254,11 @@ class ImpactInput(StrictModel):
 
 
 class McpIntake(StrictModel):
-    display_name: str = Field(min_length=2, max_length=80)
+    display_name: str | None = Field(default=None, min_length=2, max_length=80)
     repository_url: str = Field(default="", max_length=300)
     intake_kind: Literal["repository", "remote-endpoint"] = "repository"
     endpoint_url: str = Field(default="", max_length=500)
-    requested_transport: Literal["streamable-http", "stdio", "sse"]
+    requested_transport: Literal["streamable-http", "stdio", "sse"] | None = None
     purpose: str = Field(min_length=10, max_length=1000)
     # Optional on the wire for older clients; approval holds a request that has none.
     risk_input: ImpactInput | None = None
@@ -266,6 +266,11 @@ class McpIntake(StrictModel):
     requested_tools: list[str] = Field(default_factory=list, max_length=300)
     # An administrator writing up an employee's request from their PC (`mint request`): the employee is the applicant.
     endpoint_request_id: UUID | None = None
+
+    @field_validator("display_name", "purpose", mode="before")
+    @classmethod
+    def strip_intake_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 class ExitTermsReview(StrictModel):
@@ -1477,16 +1482,20 @@ async def publish_internal_repo(row: dict) -> tuple[str, dict]:
 @app.post("/api/mcp-requests")
 async def create_mcp_request(request: McpIntake, authorization: str | None = Header(default=None)):
     user = await current_identity(authorization)
+    remote = request.intake_kind == "remote-endpoint"
+    transport = request.requested_transport or ("streamable-http" if remote else "stdio")
     try:
         repository_url = github_repository_url(request.repository_url) if request.repository_url else ""
         repository_path = github_repository_path(request.repository_url) if request.repository_url else ""
-        endpoint = registration_endpoint(request.endpoint_url) if request.intake_kind == "remote-endpoint" else None
+        endpoint = registration_endpoint(request.endpoint_url) if remote else None
         if request.intake_kind == "repository" and not repository_url:
             raise ValueError("소스 도입에는 구현 저장소 주소가 필요합니다.")
-        if request.intake_kind == "remote-endpoint" and request.requested_transport != "streamable-http":
+        if remote and transport != "streamable-http":
             raise ValueError("현재 원격 서비스 검토는 Streamable HTTP를 지원합니다. 다른 전송은 아직 검증되지 않았습니다.")
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    inferred_name = urlsplit(endpoint).hostname if endpoint else (repository_path or repository_url).rsplit("/", 1)[-1]
+    display_name = request.display_name or (inferred_name if len(inferred_name) >= 2 else f"{inferred_name} MCP")[:80]
     # 거부(REJECTED)는 사람의 판단이고 실패(FAILED)는 검증이 끝나지 못한 오류다.
     # 둘을 같이 막으면, 스캐너 장애 한 번이 그 저장소를 영구히 신청 불가로 만든다.
     # 실제로 워커의 semgrep이 깨져 있던 동안 들어온 요청이 전부 그렇게 됐다.
@@ -1531,8 +1540,8 @@ async def create_mcp_request(request: McpIntake, authorization: str | None = Hea
                  ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                  RETURNING id, display_name, repository_url, repository_path, requested_transport, purpose,
                            status, risk_level, exit_terms, created_at, intake_kind, endpoint_url""",
-            (uuid4(), applicant, request.display_name.strip(), repository_url,
-             request.requested_transport, request.purpose.strip(), Jsonb({}),
+            (uuid4(), applicant, display_name, repository_url,
+             transport, request.purpose, Jsonb({}),
              "HOLD" if endpoint else "VALIDATION_QUEUED", request.intake_kind, endpoint,
              Jsonb(applicant_input), Jsonb(sorted(set(request.requested_tools))),
              "" if endpoint else repository_path))).fetchone()
@@ -1542,9 +1551,9 @@ async def create_mcp_request(request: McpIntake, authorization: str | None = Hea
                 (user["principal"], str(request.endpoint_request_id)))
         if row:
             await review.record_event("user-consent", "recorded", "intake", row["id"], applicant,
-                                      applicant=applicant, reason=request.purpose.strip(),
+                                      applicant=applicant, reason=request.purpose,
                                       scope={"kind": request.intake_kind, "target": endpoint or "/".join(filter(None, (repository_url, repository_path))),
-                                             "transport": request.requested_transport}, connection=connection)
+                                             "transport": transport}, connection=connection)
     return {"request": row, "message": "신청했습니다."}
 
 
