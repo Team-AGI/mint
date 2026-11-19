@@ -794,6 +794,12 @@ async def prepare_token_revocation(connection, tokens):
 
 
 async def recoverable(device):
+    # 받아 가고 시작하지 못한 채 임대가 끝난 작업은 더는 시작 허가를 받을 수 없다(시작은 lease_until>now만 받는다).
+    # 실행된 것이 없으니 여기서 정지로 닫는다. PC에 넘기면 신원 파일이 없어 복구가 영원히 실패하고 새 작업도 못 받는다.
+    await db.execute("""UPDATE local_jobs SET stopped_at=clock_timestamp(), state='expired', stop_requested=true,
+        finished_at=COALESCE(finished_at, clock_timestamp())
+        WHERE device_id=%s AND claimed_at IS NOT NULL AND started_at IS NULL AND stopped_at IS NULL
+          AND lease_until<=clock_timestamp()""", (device['endpoint_id'],))
     return await db.fetch_all("""SELECT id, (manifest ? 'source') AS process FROM local_jobs WHERE device_id=%s AND claimed_at IS NOT NULL
         AND stopped_at IS NULL AND (started_at IS NOT NULL OR lease_until<=clock_timestamp()) ORDER BY created_at LIMIT 16""",
         (device['endpoint_id'],))
