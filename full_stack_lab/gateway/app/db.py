@@ -36,7 +36,7 @@ _pool: AsyncConnectionPool | None = None
 _pool_lock = asyncio.Lock()
 
 # A second, small pool for the Console's read-only summary endpoints (/api/overview,
-# /api/latency, /api/health) so a slow admin query cannot starve the judging pool
+# /api/latency, /api/health, /api/activity/analysis) so a slow report cannot starve the judging pool
 # above of connections a policy decision needs.
 _admin_pool: AsyncConnectionPool | None = None
 _admin_pool_lock = asyncio.Lock()

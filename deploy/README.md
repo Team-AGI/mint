@@ -60,6 +60,7 @@ cd mint/deploy
 | `MINT_BIND`, `MINT_PUBLIC_NAME` | 게시할 사내 IPv4와 선택적인 인증서 DNS 이름입니다. |
 | `FIELD_CONSOLE_TLS`, `FIELD_CONSOLE_NAME`, `FIELD_CONSOLE_CERT_FILE`, `FIELD_CONSOLE_KEY_FILE` | 위 콘솔 인증서 방식과 이름·파일 경로입니다. |
 | `MODEL_PROXY_PORT`, `MINT_NET_PREFIX` | 모델 프록시 포트 `3128`, 내부 네트워크 접두부 `10.246`입니다. |
+| `DB_POOL_MAX`, `DB_ADMIN_POOL_MAX`, `DB_ADMIN_STATEMENT_TIMEOUT_MS` | 게이트웨이의 도구 판정 풀과 콘솔 집계 풀은 기본 최대 10개와 3개의 DB 연결을 사용합니다. 호출 기록 분석·대시보드 요약·지연·상태 조회의 집계 SQL에는 기본 10초 제한이 적용됩니다. |
 | `ROOT_SOLO_APPROVAL` | 기본 `0`으로 신청자와 다른 관리자가 승인합니다. `1`은 root 단독 승인 모드입니다. |
 | `ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_HOURS` | 접근 토큰 10분, 갱신 토큰 8시간입니다. |
 | `FLOW_MATCH_MODE` | 기본 `coarse`입니다. 중요정보를 읽은 뒤 다른 서버에 쓰기·실행하는 흐름의 판정 방식입니다. |
@@ -67,7 +68,10 @@ cd mint/deploy
 | `GITHUB_OAUTH_CLIENT_ID` | GitHub 계정 연결에 사용하는 선택적인 OAuth App client ID입니다. 현 판본의 콘솔에는 직원용 계정 연결 화면이 없으므로 이 값만 설정해도 직원이 연결할 수 없습니다. 아래 운영자 자격 파일을 사용할 수 있습니다. |
 | `OTEL_SDK_DISABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT` | 호출 추적 설정입니다. 기본값은 사용(`false`)이며, 주소를 비우면 함께 설치되는 추적 수집기(Jaeger)로 보냅니다. 외부 OpenTelemetry 수집기를 쓰면 주소를 넣습니다. 추적 화면은 콘솔 관리자로 로그인한 뒤 `https://<사내 IPv4>/jaeger/`에서 엽니다. 추적 정보는 메모리에만 보관하므로 다시 시작하면 비워집니다. |
 | `SIEM_URL`, `SIEM_TOKEN_FILE`, `SIEM_CA_FILE` | 선택적인 SIEM 전송 설정입니다. 파일은 `deploy/siem/`에 두고 컨테이너 경로 `/run/siem/…`로 지정한 뒤 `./mint.sh up --with-siem`을 실행합니다. |
+| `SIEM_WORKERS` | SIEM 전송 작업자 수입니다. 기본값은 `1`입니다. 전송이 밀리고 수신기에 여유가 있으면 `.env`에서 `2`로 설정하고 `./mint.sh up --with-siem`을 실행합니다. 작업자들이 대기열을 나눠 처리하므로 도착 순서가 달라질 수 있습니다. 재전송 중복은 수신기에서 `Idempotency-Key`로 식별합니다. |
 | 서명 키와 `USER_CREDENTIAL_KEY` | 설치 시 생성합니다. 기존 값을 임의로 바꾸거나 잃으면 서명 검증과 저장된 자격 복구에 문제가 생길 수 있습니다. |
+
+OPA 로그에서 정책 관리대장 등 배포 문서 조회는 경로·결정 ID와 함께 `erased: ["/result"]`로 표시됩니다. 도구 호출 판정 로그에는 입력과 판정 결과가 기록되며, 콘솔의 호출 감사 기록은 PostgreSQL에서 조회합니다.
 
 ## 계정과 직원 PC
 

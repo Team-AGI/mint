@@ -846,7 +846,8 @@ async function dashboardModel(query, options = {}) {
   const soft = (promise) => promise.catch(() => null);
   const [o, pl, inventory, cur, prev, blocked, health, alerts, previousAlerts, ledger, delivery, queue] = await Promise.all([
     gw("overview", options), planes(), gw("endpoint/inventory", options),
-    soft(gw(`activity/analysis?${range(r.since, r.until)}`, options)), soft(gw(`activity/analysis?${range(r.previousSince, r.previousUntil)}`, options)),
+    soft(gw(`activity/analysis?${range(r.since, r.until)}`, options)),
+    soft(gw(`activity/analysis?${range(r.previousSince, r.previousUntil)}&series_only=true`, options)),
     gw(`activity?${dashboardScope(r.since, r.until, server, { decision: "Block", limit: 10 })}`, options),
     soft(gw("health", options)), soft(gw(`audit/alerts?${new URLSearchParams({ limit: 6, since: r.since.toISOString(), until: r.until.toISOString() })}`, options)),
     soft(gw(`audit/alerts?${new URLSearchParams({ limit: 1, since: r.previousSince.toISOString(), until: r.previousUntil.toISOString() })}`, options)),
