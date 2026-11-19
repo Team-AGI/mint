@@ -53,6 +53,8 @@ class ToolReview(StrictModel):
     accepts_from: list[str] = Field(default_factory=list, max_length=20)
     # POL-08: the employee's own consent is needed per tool and data grade.
     consent: bool = False
+    # 도입 승인 기본 통과: 목적지를 적지 않은 주소 인자는 HTTPS를 받고 전송 정책이 판정한다.
+    open_addresses: bool = False
     high_impact: bool = Field(default=False, strict=True)
     impact_domains: list[Literal["employment", "credit", "legal", "benefits", "contract", "service_access"]] = Field(default_factory=list, max_length=6)
 
