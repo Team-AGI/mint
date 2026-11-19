@@ -1666,12 +1666,11 @@ async function showServer(id) {
       ["사용 기한", registration ? `${when(registration.valid_until)} · ${DATA_CLASS[registration.data_class] || ""}` : ""],
       ["등록", registration ? `${registration.registered_by} · ${when(registration.registered_at)}` : ""],
       ["마지막 확인", s.last_seen_at ? `${when(s.last_seen_at)} · ${ago(s.last_seen_at)}` : ""]]) },
-    { key: "tools", label: "도구·범위", n: tools.length, body: html`<div class="stack"><table class="data"><thead><tr><th>도구</th><th>행위</th><th>상태</th><th>마지막 사용</th><th>기한</th><th>이용 상태</th><th></th></tr></thead><tbody>
+    { key: "tools", label: "도구·범위", n: tools.length, body: html`<div class="stack"><table class="data"><thead><tr><th>도구</th><th>행위</th><th>상태</th><th>마지막 사용</th><th>기한</th><th>이용 상태</th></tr></thead><tbody>
       ${tools.map((t) => { const [lastUse, deadline, sunsetStatus] = toolSunsetRow(id, t.name); const blocked = (registration?.blocked_tools || []).includes(t.name);
-        return html`<tr><td><code>${t.name}</code></td><td>${chip({ r: "allow", w: "alert", x: "block" }[t.action] || "", ACTION[t.action] || t.action)}</td>
+        return html`<tr><td><code>${t.name}</code>${registration?.intake_id && registration.tools?.[t.name] ? html`<div class="row-actions"><button class="btn sm ${blocked ? "" : "danger"}" type="button" data-act="tool-block" data-id="${s.id}" data-tool="${t.name}" data-blocked="${blocked ? "" : "1"}">${blocked ? "차단 해제" : "차단"}</button></div>` : ""}</td><td>${chip({ r: "allow", w: "alert", x: "block" }[t.action] || "", ACTION[t.action] || t.action)}</td>
         <td>${blocked ? chip("block", "차단") : !t.enabled ? (registration?.tools?.[t.name] ? chip("block", "범위 미심사") : chip("outline", "미승인")) : t.contract_ok ? chip("allow", "일치") : chip("alert", "불일치")}</td>
-        <td>${lastUse}</td><td>${deadline}</td><td>${sunsetStatus}</td>
-        <td class="num">${registration?.intake_id && registration.tools?.[t.name] ? html`<button class="btn sm ${blocked ? "" : "danger"}" type="button" data-act="tool-block" data-id="${s.id}" data-tool="${t.name}" data-blocked="${blocked ? "" : "1"}">${blocked ? "해제" : "차단"}</button>` : ""}</td></tr>`; })}</tbody></table>
+        <td>${lastUse}</td><td>${deadline}</td><td>${sunsetStatus}</td></tr>`; })}</tbody></table>
       ${registration ? scopeTable(registration.tools, registration.tool_reviews, registration.data_class, registration.intake_id ? s.id : null, registration.address_tools || []) : ""}</div>` },
     { key: "audience", label: "사용 대상", body: html`${kv([["대상", registration?.intake_id ? audienceText(registration.allowed_principals) : "—"]])}
       ${rels.length ? html`<h3>이용 관계</h3>${kv(rels.map((u) => [u.purpose, html`${u.organization} · ${(REL_STATUS[u.status] || [, u.status])[1]}
