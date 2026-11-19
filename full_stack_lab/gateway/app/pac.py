@@ -268,7 +268,8 @@ def transfer_binding(spec: dict, feature: str, destinations: list[str]) -> tuple
                                                        for h in terms.get("destinations") or []))
     pairs = [{"destination_id": destination, "grade": grade, "purpose": terms.get("purpose", "")}
              for grade in GRADES_UP_TO.get(terms.get("grade"), [])] if covered else []
-    return False, pairs
+    # 최종 접속 증명은 목적지를 지정해 승인한 도구에만 요구한다. 기본 통과 도구는 등급 제한과 사후 차단으로 다룬다.
+    return open_scope and covered, pairs
 
 
 async def build(payload: dict, principal: dict, cls, tool: dict | None, contract: dict,
