@@ -112,7 +112,7 @@ def tool_reviews(row: dict, tools: list[dict], addressed: frozenset | set = froz
     return {t["name"]: {"purpose": row["purpose"][:200], "asset": row["display_name"][:200],
                         "destinations": suggested_destinations(row, t) if t["name"] in addressed else [],
                         "inputs": list((t.get("input_schema") or {}).get("properties") or {}),
-                        "mask": True, "grade": grade, "accepts_from": [], "consent": True}
+                        "mask": True, "grade": grade, "accepts_from": [], "consent": False}
             for t in tools}
 
 
