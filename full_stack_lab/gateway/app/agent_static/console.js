@@ -2115,13 +2115,16 @@ function intakeStatus(form, message, field = null) {
     if (field === "requested_tool") for (const control of form.querySelectorAll('[name="requested_tool"]')) control.setAttribute("aria-invalid", "true");
     const error = form.querySelector(`[data-field-error="${field}"]`);
     if (error) error.textContent = message;
+    const details = error?.closest("details");
+    if (details) details.open = true;
   }
 }
 function resetIntakeTools(form) {
   form.dataset.discoveryGeneration = String(Number(form.dataset.discoveryGeneration || 0) + 1);
   delete form.dataset.discoveredEndpoint;
   form.querySelector("[data-requested-tools]").replaceChildren();
-  intakeStatus(form, "도구 조회 필요");
+  form.querySelector('[data-field-error="requested_tool"]').textContent = "";
+  intakeStatus(form, "");
 }
 
 function requestedToolList(tools) {
@@ -2258,27 +2261,29 @@ function showAvailableMcp(server) {
   ]);
 }
 
-function intakeNewBody(pre, fromRepo, catalog) {
+function intakeNewBody(query, catalog) {
+  const pre = { name: query.get("name") || "", purpose: query.get("purpose") || "", source: query.get("source") || "", asked: query.get("asked") || "" };
+  const fromRepo = !pre.source || /^https:\/\/(?:www\.)?github\.com\//i.test(pre.source);
   const opt = (value, label, on) => html`<option value="${value}" ${on ? raw("selected") : ""}>${label}</option>`;
   return html`<div class="stack">
           ${panel("새 신청", html`<form class="stack form" data-form="intake"><div data-intake-status role="status" aria-live="polite"></div>
-          <fieldset><legend>서비스</legend>
-            <label>서비스 이름<input name="display_name" aria-invalid="false" aria-describedby="intake-display_name-error" required minlength="2" maxlength="80" placeholder="GitHub MCP" value="${pre.name}" /><span id="intake-display_name-error" data-field-error="display_name" role="alert"></span></label>
-            <label>사용 목적<textarea name="purpose" aria-invalid="false" aria-describedby="intake-purpose-error" required minlength="10" maxlength="1000">${pre.purpose}</textarea><span id="intake-purpose-error" data-field-error="purpose" role="alert"></span></label>
-          </fieldset>
-          <fieldset><legend>연결</legend><div class="grid c2">
-            <label>유형<select name="intake_kind" aria-invalid="false" aria-describedby="intake-intake_kind-error" data-intake-kind>${opt("remote-endpoint", "원격 MCP", !fromRepo)}${opt("repository", "소스 코드", fromRepo)}</select><span id="intake-intake_kind-error" data-field-error="intake_kind" role="alert"></span></label>
-             <label>연결 방식<select name="requested_transport" aria-invalid="false" aria-describedby="intake-requested_transport-error">${Object.entries(TRANSPORT).map(([value, label]) => opt(value, label, value === (fromRepo ? "stdio" : "streamable-http")))}</select><span id="intake-requested_transport-error" data-field-error="requested_transport" role="alert"></span></label>
-            <label data-intake-field="remote-endpoint" ${fromRepo ? raw("hidden") : ""}>MCP 주소<input name="endpoint_url" aria-invalid="false" aria-describedby="intake-endpoint_url-error" type="url" maxlength="500" placeholder="https://…/mcp" value="${fromRepo ? "" : pre.source}" /><span id="intake-endpoint_url-error" data-field-error="endpoint_url" role="alert"></span></label>
-            ${pre.asked ? html`<input type="hidden" name="endpoint_request_id" value="${pre.asked}" />` : ""}
-            <label data-intake-field="repository" ${fromRepo ? "" : raw("hidden")}>저장소<input name="repository_url" aria-invalid="false" aria-describedby="intake-repository_url-error" type="url" maxlength="300" placeholder="https://github.com/org/repo" value="${fromRepo ? pre.source : ""}" /><span id="intake-repository_url-error" data-field-error="repository_url" role="alert"></span></label>
-          </div></fieldset>
-          <label>데이터 등급<select name="data_class" aria-invalid="false" aria-describedby="intake-data_class-error">${Object.entries(DATA_CLASS).map(([value, label]) => opt(value, label, value === "nonimportant"))}</select><span id="intake-data_class-error" data-field-error="data_class" role="alert"></span></label>
-          <fieldset data-intake-field="remote-endpoint"><legend>필요한 도구</legend>
+          <div class="grid c2">
+            <label>유형<select name="intake_kind" data-intake-kind>${opt("repository", "소스 코드", fromRepo)}${opt("remote-endpoint", "원격 MCP", !fromRepo)}</select></label>
+            <label data-intake-field="repository" ${fromRepo ? "" : raw("hidden")}>GitHub 저장소 주소<input name="repository_url" aria-invalid="false" aria-describedby="intake-repository_url-error" type="url" required maxlength="300" placeholder="https://github.com/org/repo" value="${fromRepo ? pre.source : ""}" ${fromRepo ? "" : raw("disabled")} /><span id="intake-repository_url-error" data-field-error="repository_url" role="alert"></span></label>
+            <label data-intake-field="remote-endpoint" ${fromRepo ? raw("hidden") : ""}>MCP 주소<input name="endpoint_url" aria-invalid="false" aria-describedby="intake-endpoint_url-error" type="url" required maxlength="500" placeholder="https://…/mcp" value="${fromRepo ? "" : pre.source}" ${fromRepo ? raw("disabled") : ""} /><span id="intake-endpoint_url-error" data-field-error="endpoint_url" role="alert"></span></label>
+          </div>
+          <label>사용 목적<textarea name="purpose" aria-invalid="false" aria-describedby="intake-purpose-error" required minlength="10" maxlength="1000">${pre.purpose}</textarea><span id="intake-purpose-error" data-field-error="purpose" role="alert"></span></label>
+          ${pre.asked ? html`<input type="hidden" name="endpoint_request_id" value="${pre.asked}" />` : ""}
+          <fieldset data-intake-field="remote-endpoint" ${fromRepo ? raw("hidden disabled") : ""}><legend>필요한 도구</legend>
             <button class="btn" type="button" data-act="intake-discover">도구 불러오기</button>
             <div data-requested-tools></div><span id="intake-requested_tool-error" data-field-error="requested_tool" role="alert"></span>
           </fieldset>
-          <div class="row-actions center"><button class="btn primary" type="submit">신청</button></div></form>`)}
+          <details class="intake-options"><summary>추가 설정 <span class="small muted">· 데이터 등급 <span data-intake-data-class>${DATA_CLASS.nonimportant}</span></span></summary><div class="grid c2">
+            <label>서비스 이름<input name="display_name" aria-invalid="false" aria-describedby="intake-display_name-error" minlength="2" maxlength="80" placeholder="주소에서 자동 생성" value="${pre.name}" /><span id="intake-display_name-error" data-field-error="display_name" role="alert"></span></label>
+            <label>데이터 등급<select name="data_class">${Object.entries(DATA_CLASS).map(([value, label]) => opt(value, label, value === "nonimportant"))}</select></label>
+            <label data-intake-field="repository" ${fromRepo ? "" : raw("hidden")}>연결 방식<select name="requested_transport" ${fromRepo ? "" : raw("disabled")}>${Object.entries(TRANSPORT).map(([value, label]) => opt(value, label, value === "stdio"))}</select></label>
+          </div></details>
+          <div class="row-actions"><button class="btn primary" type="submit">신청</button></div></form>`)}
           <details class="panel"><summary>기존 신청 검색</summary><div class="filters"><input class="grow" type="search" data-catalog-search
             aria-label="MCP 이름 또는 저장소 검색" placeholder="MCP 이름 또는 저장소" /></div>
             <div id="catalog-results" aria-live="polite">${catalogResults(catalog || { requests: [], registry: [] })}</div></details></div>`;
@@ -2303,8 +2308,6 @@ ROUTES.intake = async (arg, tab, query = new URLSearchParams()) => {
   const distGroup = (title, list) => (list.length ? html`<div class="dist"><span class="dist-title">${title}</span>${list.map(([tone, name, n]) => chip(tone, `${name} ${n}`))}</div>` : "");
   const distribution = requests.length ? html`<div class="dist-strip">${distGroup(`전체 신청 상태 · ${requests.length}건`, stages.filter((x) => x.value).map((x) => [stageTone[x.key], stageName[x.key], x.value]))}
     ${distGroup("위험 등급", Object.entries(mix).filter(([, n]) => n).map(([k, n]) => [tierTone[k], tierName[k], n]))}</div>` : "";
-  const pre = { name: query.get("name") || "", purpose: query.get("purpose") || "", source: query.get("source") || "", asked: query.get("asked") || "" };
-  const fromRepo = /^https:\/\/github\.com\//.test(pre.source);
   return {
     html: page({
       head: head(viewer.admin ? "도입 심사" : "도입 신청"),
@@ -2337,7 +2340,7 @@ ROUTES.intake = async (arg, tab, query = new URLSearchParams()) => {
         ...(viewer.admin ? [] : [{ key: "approved", label: "사용 가능한 MCP", body: panel("사용 가능한 MCP", approvedMcpTable(servers, approvedMcpSearch), { flush: true,
           end: html`<a class="panel-shortcut" href="#/intake?t=new"><span>새 신청</span><span aria-hidden="true">↗</span></a>`,
           tools: servers.length ? listToolbar("available-mcp", "이름 또는 기능 검색", approvedMcpSearch) : "" }) }]),
-        { key: "new", label: "새 신청", body: intakeNewBody(pre, fromRepo, catalog) },
+        { key: "new", label: "새 신청", body: intakeNewBody(query, catalog) },
       ].sort((a, b) => tabOrder.indexOf(a.key) - tabOrder.indexOf(b.key)),
     }),
     charts: {},
@@ -2423,41 +2426,56 @@ function assuranceRows(a) {
 function intakeProposalView(out) {
   const p = out.proposal, r = out.request, unknown = "확인 안 됨";
   const localRun = out.local_execution || p.local_execution || r.local_execution || r.evidence?.local_execution;
-  return html`${kv([["주소", p.endpoint || r.repository_url], ["판본", r.commit_sha || p.catalog?.version || unknown],
-      ["용도", p.purpose], ["신청자", r.submitter_name || r.submitted_by], ["서버 ID", p.server_id],
-      ["데이터 등급", DATA_CLASS[p.data_class]], ["원격 도메인", r.endpoint_url ? new URL(r.endpoint_url).hostname : "—"],
-      ["계약 지문", p.catalog?.catalog_hash || unknown], ["공급자 홈페이지", p.supplier_metadata?.homepage || unknown],
-      ["라이선스", p.provenance?.license?.spdx || unknown]])}
-    ${localRun ? html`<fieldset><legend>엔드포인트 실행</legend>${kv([
-      ["관찰 엔드포인트", localRun.observer_device || unknown],
-      ["실행 계정 번호", localRun.observer_uid == null ? unknown : String(localRun.observer_uid)],
-      ["격리 구성", localRun.isolation_scope || unknown], ["사용자 매핑", localRun.user_mapping || unknown],
-    ])}</fieldset>` : ""}`;
+  return html`<div class="stack">${kv([
+      ["주소", r.endpoint_url || [r.repository_url, r.repository_path].filter(Boolean).join("/")],
+      ["용도", p.purpose], ["신청자", r.submitter_name || r.submitted_by], ["데이터 등급", DATA_CLASS[p.data_class]]])}
+    <details class="intake-options"><summary>출처·계약 정보</summary>
+      ${kv([["판본", r.commit_sha || p.catalog?.version || unknown], ["서버 ID", p.server_id],
+        ["계약 지문", p.catalog?.catalog_hash || unknown], ["공급자 홈페이지", p.supplier_metadata?.homepage || unknown],
+        ["라이선스", p.provenance?.license?.spdx || unknown]])}
+      ${localRun ? html`<fieldset><legend>엔드포인트 실행</legend>${kv([
+        ["관찰 엔드포인트", localRun.observer_device || unknown],
+        ["실행 계정 번호", localRun.observer_uid == null ? unknown : String(localRun.observer_uid)],
+        ["격리 구성", localRun.isolation_scope || unknown], ["사용자 매핑", localRun.user_mapping || unknown],
+      ])}</fieldset>` : ""}
+    </details></div>`;
 }
 function intakeScopeFields(out) {
   const p = out.proposal, pending = out.pending, scope = pending?.scope;
   const selected = scope?.tools || Object.keys(p.tools);
+  const tools = (p.catalog?.tools || []).filter((t) => Object.hasOwn(p.tools, t.name));
   const count = out.gate.critical?.count || 0;
   return html`${p.blockers.map((b) => html`<div class="note warn">${b.message}</div>`)}
-  <fieldset class="tool-pick"><legend>승인 도구</legend>${(p.catalog?.tools || []).filter((t) => t.name in p.tools).map((t) => html`<label>
-    <input type="checkbox" name="approved_tool" value="${t.name}" ${selected.includes(t.name) ? raw("checked") : ""} ${pending ? raw("disabled") : ""} />
-    <span><b>${t.name}</b>${pending ? html`<span>${ACTION[scope.actions?.[t.name] || p.tools[t.name]]}</span>`
-      : html`<select name="action_${t.name}">${Object.entries(ACTION).slice(0, "rwx".indexOf(p.tools[t.name]) + 1).map(([k, v]) =>
-        html`<option value="${k}" ${k === p.tools[t.name] ? raw("selected") : ""}>${v}</option>`)}</select>`}<span class="sub">${t.description || "—"}</span>
-      ${(p.address_tools || []).includes(t.name) ? (pending ? kv([["허용 주소", destinationText(scope.destinations?.[t.name] || p.tool_reviews[t.name].destinations)]])
-        : field.text(`destinations_${t.name}`, "허용 주소", 'maxlength="300"', p.tool_reviews[t.name].destinations.join(", "))) : ""}
+  ${tools.length ? html`<fieldset><legend>승인 도구</legend>${tools.map((t) => {
+    const action = scope?.actions?.[t.name] || p.tools[t.name];
+    const addressed = (p.address_tools || []).includes(t.name);
+    const hosts = scope?.destinations?.[t.name] ?? p.tool_reviews[t.name].destinations;
+    return html`<div class="intake-tool">
+      <label class="check"><input type="checkbox" name="approved_tool" value="${t.name}" ${selected.includes(t.name) ? raw("checked") : ""} ${pending ? raw("disabled") : ""} />
+        <b>${t.name}</b><span class="chip" data-intake-action>${ACTION[action]}</span></label>
+      ${t.description ? html`<div class="sub">${t.description}</div>` : ""}
+      ${addressed ? html`<div class="sub">허용 주소 · <span data-intake-hosts>${destinationText(hosts)}</span></div>` : ""}
       ${(t.warnings || []).length ? chip("alert", "도구 설명 경고") : ""}
-      <details><summary>계약·인자 제한</summary><pre>${JSON.stringify({ input: t.input_schema, output: t.output_schema,
-        constraints: p.parameter_constraints[t.name], scope: p.tool_reviews[t.name] }, null, 2)}</pre></details></span></label>`)}</fieldset>
-  ${count && !pending ? field.text("critical_reason", "치명적 발견 수용 사유", 'required minlength="10" maxlength="1000"') : ""}
-  ${p.risk.tier === "very_high" ? field.text("risk_reason", "위험 수용 사유", 'required minlength="10" maxlength="1000"') : ""}`;
+      <details class="intake-options"><summary>계약·인자 제한</summary><div class="stack">
+        ${pending ? "" : html`<div class="grid c2">
+          ${field.select(`action_${t.name}`, "허용 행위", Object.fromEntries(Object.entries(ACTION).slice(0, "rwx".indexOf(action) + 1)), action)}
+          ${addressed ? field.text(`destinations_${t.name}`, "허용 주소", 'maxlength="300"', hosts.join(", ")) : ""}
+        </div>`}
+        <pre>${JSON.stringify({ input: t.input_schema, output: t.output_schema,
+          constraints: p.parameter_constraints[t.name], scope: p.tool_reviews[t.name] }, null, 2)}</pre>
+      </div></details></div>`;
+  })}</fieldset>` : ""}
+  ${pending || p.blockers.length ? "" : html`<details class="intake-options"><summary>사용 대상·기한</summary>
+    <div class="grid c2">${field.select("valid_days", "사용 기한", VALIDITY, "90")}${audienceFields("all")}</div></details>`}
+  ${!p.blockers.length && count && !pending ? field.text("critical_reason", "치명적 발견 수용 사유", 'required minlength="10" maxlength="1000"') : ""}
+  ${!p.blockers.length && p.risk.tier === "very_high" ? field.text("risk_reason", "위험 수용 사유", 'required minlength="10" maxlength="1000"') : ""}`;
 }
 function intakeDock(out, id) {
   const p = out.proposal, pending = out.pending, scope = pending?.scope;
   const need = p.risk.tier === "high" || p.risk.tier === "very_high" ? 2 : 1;
   return html`<div class="row-actions docked">
     ${pending ? html`<span class="small muted">${pending.approvers.length} / ${need} · ${scope.valid_days}일 · ${AUDIENCE[scope.audience || "all"]}${scope.audience_users?.length ? ` · ${scope.audience_users.join(", ")}` : ""}</span>`
-      : html`${field.select("valid_days", "사용 기한", VALIDITY, "90")}${audienceFields("all")}`}
+      : p.blockers.length ? "" : html`<span class="small muted" data-intake-approval-scope>${AUDIENCE.all} · ${VALIDITY["90"]}</span>`}
     <button class="btn" type="button" data-act="intake-reject" data-id="${id}">거부</button>
     <button class="btn" type="button" data-act="intake-confirm" data-id="${id}" ${p.blockers.length ? raw("disabled") : ""}>승인</button></div>`;
 }
@@ -2467,22 +2485,27 @@ const LOCAL_REASON = { local_file: "로컬 파일", local_tool: "로컬 도구",
 async function askLocalRun(id, request, preset = {}, status = "") {
   const generated = request.evidence?.endpoint_source;
   const cur = request.evidence?.local_run || (generated ? { source: generated } : preset);
+  const process = Boolean(cur.source);
   const fd = await ask({ title: `엔드포인트 실행 · ${request.display_name}`, confirm: "확인", fields: html`
     ${status ? chip("alert", status) : ""}
-    ${field.select("execution", "실행 방식", { process: "프로세스", container: "컨테이너" }, cur.source ? "process" : "container")}
-    ${field.select("source_runtime", "런타임", { python: "Python", node: "Node.js" }, cur.source?.runtime || "python")}
-    ${field.text("source_entrypoint", "진입 파일", 'maxlength="256"', cur.source?.entrypoint || "")}
-    ${!generated ? html`${field.text("source_lock", "의존성 잠금 파일", 'maxlength="256"', cur.source?.lock || "package-lock.json")}
-      ${field.text("source_lock_hash", "의존성 잠금 해시", 'maxlength="64"', cur.source?.lock_sha256 || "")}` : ""}
-    ${field.text("image", "이미지", 'maxlength="300"',
-      cur.image || (request.repository_path && !status ? `mcp/${request.repository_path.split("/").pop()}` : ""))}
-    ${field.text("command", "실행 인자", 'maxlength="2000" placeholder="/workspace/폴더이름"', (cur.command || []).join(" "))}
-    ${field.text("mounts", "폴더 (홈 기준 → /workspace/경로, 쉼표 구분, 경로:ro|rw)", 'maxlength="1000" placeholder="폴더이름:ro"',
-      (cur.mounts || []).map((m) => `${m.path}:${m.mode}`).join(", "))}
-    ${field.text("env", "환경 변수 (이름=값, 쉼표 구분)", 'maxlength="2000" placeholder="이름=값"',
-      Object.entries(cur.env || {}).map(([k, v]) => `${k}=${v}`).join(", "))}
+    ${field.select("execution", "실행 방식", { process: "프로세스", container: "컨테이너" }, process ? "process" : "container")}
+    <div class="stack" data-intake-execution="process" ${process ? "" : raw("hidden")}>
+      ${field.select("source_runtime", "런타임", { python: "Python", node: "Node.js" }, cur.source?.runtime || "python")}
+      ${field.text("source_entrypoint", "진입 파일", 'maxlength="256"', cur.source?.entrypoint || "")}
+      ${!generated ? html`${field.text("source_lock", "의존성 잠금 파일", 'maxlength="256"', cur.source?.lock || "package-lock.json")}
+        ${field.text("source_lock_hash", "의존성 잠금 해시", 'maxlength="64"', cur.source?.lock_sha256 || "")}` : ""}
+    </div>
+    <div data-intake-execution="container" ${process ? raw("hidden") : ""}>${field.text("image", "이미지", 'maxlength="300"',
+      cur.image || (request.repository_path && !status ? `mcp/${request.repository_path.split("/").pop()}` : ""))}</div>
     ${field.select("reason_kind", "실행 위치 근거", LOCAL_REASON, cur.reason_kind || "local_file")}
-    ${field.text("reason_text", "근거 설명", 'required minlength="10" maxlength="500"', cur.reason_text || "")}` });
+    ${field.text("reason_text", "근거 설명", 'required minlength="10" maxlength="500"', cur.reason_text || "")}
+    <details class="intake-options"><summary>실행 인자·폴더·환경 변수</summary><div class="stack">
+      ${field.text("command", "실행 인자", 'maxlength="2000" placeholder="/workspace/폴더이름"', (cur.command || []).join(" "))}
+      ${field.text("mounts", "폴더 (홈 기준 → /workspace/경로, 쉼표 구분, 경로:ro|rw)", 'maxlength="1000" placeholder="폴더이름:ro"',
+        (cur.mounts || []).map((m) => `${m.path}:${m.mode}`).join(", "))}
+      ${field.text("env", "환경 변수 (이름=값, 쉼표 구분)", 'maxlength="2000" placeholder="이름=값"',
+        Object.entries(cur.env || {}).map(([k, v]) => `${k}=${v}`).join(", "))}
+    </div></details>` });
   if (!fd) return false;
   const mounts = String(fd.get("mounts") || "").split(",").map((v) => v.trim()).filter(Boolean).map((v) => {
     const [path, mode = "ro"] = v.split(":");
@@ -2527,11 +2550,16 @@ async function intakeDetail(id, tab) {
   const assurance = out?.pending?.scope?.supplier_assurance || out?.proposal.supplier_assurance || registered?.supplier_assurance || {};
   const supplier = assuranceRows(assurance).filter(([, v]) => v !== UNCONFIRMED);
   const supplierBody = by.exit ? html`${supplier.length ? kv(supplier) : ""}${by.exit.body}` : supplier.length ? kv(supplier) : empty("공급자 정보 없음");
-  const scopeBody = html`<div class="stack">${out ? html`<form id="intake-approve" class="stack form" data-form="intake-approve">${intakeScopeFields(out)}</form>` : ""}
-    ${out ? "" : by.scope?.body || ""}${by.definitions ? html`<details><summary>승인 도구 계약</summary>${by.definitions.body}</details>` : ""}</div>`;
-  const risk = r.risk, tier = risk?.status === "ok" ? RISK_TIER[risk.tier] : null;
+  const scopeBody = html`<div class="stack">${by.scope?.body || ""}
+    ${out && by.contract ? by.contract.body : ""}
+    ${by.definitions ? html`<details><summary>승인 도구 계약</summary>${by.definitions.body}</details>` : ""}</div>`;
+  const tier = RISK_TIER[(out?.proposal.blockers.length === 0 ? out.proposal.risk.tier : null) || report.risk?.tier];
+  const approvalCount = out?.pending?.approvers.length ?? evidence.risk_assessment?.approvers?.length;
   const view = [
-    { key: "summary", label: "요약", body: html`<div class="stack">${out ? panel("제안값", intakeProposalView(out)) : ""}${(by.summary || by.contract).body}</div>` },
+    { key: "summary", label: "요약", body: html`<div class="stack">${out ? html`
+      ${panel("신청 정보", intakeProposalView(out))}
+      ${panel("승인 범위", html`<form id="intake-approve" class="stack form" data-form="intake-approve">${intakeScopeFields(out)}</form>`)}
+    ` : ""}${by.summary?.body || (out ? "" : by.contract.body)}</div>` },
     ...(by.findings || by.secrets || by.sbom ? [{ key: "scan", label: "검사", body: part(["findings", "secrets", "sbom"]) }] : []),
     { key: "scope", label: "범위·권한", body: scopeBody },
     { key: "risk", label: "위험·영향평가", body: by.risk.body },
@@ -2541,13 +2569,13 @@ async function intakeDetail(id, tab) {
   ];
   const body = page({
     head: head(r.display_name, { back: html`<a class="back" href="#/intake?t=review">← 도입 심사</a>`,
-      status: html`${chip(...(INTAKE_STATUS[r.status] || ["", r.status]))}${riskCell(r)}`,
+      status: chip(...(INTAKE_STATUS[r.status] || ["", r.status])),
       actions: html`${r.intake_kind !== "remote-endpoint" && (["HOLD", "FAILED"].includes(r.status) || r.endpoint_reapproval_required) ? html`<button class="btn" data-act="intake-queue" data-id="${id}">재검증</button>` : ""}
         ${needLocal ? html`<button class="btn" data-act="intake-local-run" data-id="${id}">엔드포인트 실행</button>` : ""}
         <button class="btn" data-act="save-json" data-name="intake-${id}-report.json">보고서 JSON 저장</button>` }),
-    kpis: kpiStrip([["위험 등급", tier ? tier[1] : "—", risk?.tier === "very_high" ? "block" : risk?.tier === "high" ? "alert" : ""],
+    kpis: kpiStrip([["위험 등급", tier?.[1] || "—", tier?.[0] || ""],
       ["치명", evidence.critical ?? "—", "block"], ["높음", evidence.high ?? "—", "alert"],
-      ["승인", risk?.status === "ok" ? `${risk.approvals}/${risk.required}` : "—"]]),
+      ["승인", approvalCount ?? "—"]]),
     tabs: view, active: view.some((t) => t.key === tab) ? tab : "summary" });
   return { html: body, dock: out ? intakeDock(out, id) : "" };
 }
@@ -3934,9 +3962,16 @@ const ACTIONS = {
     if (!ctx || ctx.id !== el.dataset.id || !form) return;
     const fd = new FormData(form), out = ctx.out, scope = out.pending?.scope;
     const selected = scope?.tools || fd.getAll("approved_tool");
-    if (!selected.length) { toast("도구를 하나 이상 선택하세요.", true); return; }
     const critical = String(fd.get("critical_reason") || "").trim(), accepted = String(fd.get("risk_reason") || "").trim();
-    if ((!scope && out.gate.critical?.count && critical.length < 10) || (out.proposal.risk.tier === "very_high" && accepted.length < 10)) { toast("수용 사유를 10자 이상 입력하세요.", true); return; }
+    const missing = !selected.length ? "approved_tool"
+      : !scope && out.gate.critical?.count && critical.length < 10 ? "critical_reason"
+      : out.proposal.risk.tier === "very_high" && accepted.length < 10 ? "risk_reason" : null;
+    if (missing) {
+      await ACTIONS.tab($("#p-tab-summary"));
+      form.querySelector(`[name="${missing}"]`)?.focus();
+      toast(missing === "approved_tool" ? "도구를 하나 이상 선택하세요." : "수용 사유를 10자 이상 입력하세요.", true);
+      return;
+    }
     const actions = scope ? scope.actions || {} : Object.fromEntries(selected.map((name) => [name, fd.get(`action_${name}`)])
       .filter(([name, action]) => action && action !== out.proposal.tools[name]));
     const destinations = scope ? scope.destinations || {} : Object.fromEntries(selected
@@ -4300,22 +4335,27 @@ const FORMS = {
   async intake(form) {
     if (form.dataset.submitting === "true") return;
     const fd = new FormData(form);
-    if (form.dataset.discoverBusy === "true") { intakeStatus(form, "도구 조회 중"); return; }
-    const remote = fd.get("intake_kind") === "remote-endpoint";
+    const intake_kind = fd.get("intake_kind"), remote = intake_kind === "remote-endpoint";
+    if (remote && form.dataset.discoverBusy === "true") { intakeStatus(form, "도구 조회 중"); return; }
     const address = remote ? "endpoint_url" : "repository_url";
-    if (!String(fd.get(address) || "").trim()) { intakeStatus(form, "주소 입력 필요", address); return; }
-    if (remote && (form.dataset.discoveredEndpoint !== String(fd.get(address)).trim() || !fd.getAll("requested_tool").length)) {
+    const target = String(fd.get(address) || "").trim(), tools = fd.getAll("requested_tool");
+    if (!target) { intakeStatus(form, "주소 입력 필요", address); return; }
+    if (remote && (form.dataset.discoveredEndpoint !== target || !tools.length)) {
       intakeStatus(form, "도구 선택 필요", "requested_tool"); return;
     }
+    const body = { intake_kind, [address]: target, purpose: String(fd.get("purpose")).trim() };
+    for (const key of ["display_name", "requested_transport", "data_class", "endpoint_request_id"]) {
+      const value = String(fd.get(key) || "").trim();
+      if (value) body[key] = value;
+    }
+    if (remote) body.requested_tools = tools;
     form.dataset.submitting = "true";
     try {
-    const body = Object.fromEntries(["display_name", "repository_url", "endpoint_url", "intake_kind", "requested_transport", "purpose"].map((k) => [k, String(fd.get(k) || "").trim()]));
-    const r = await api("/api/mcp-requests", { method: "POST", body: { ...body, data_class: fd.get("data_class"),
-      requested_tools: fd.getAll("requested_tool"), ...(fd.get("endpoint_request_id") ? { endpoint_request_id: fd.get("endpoint_request_id") } : {}) } });
-    toast(r.message);
-    location.hash = "#/intake?t=list";
+      const r = await api("/api/mcp-requests", { method: "POST", body });
+      toast(r.message);
+      location.hash = current.page === "my" ? "#/my?t=mine" : "#/intake?t=list";
     } catch (error) {
-      intakeStatus(form, "신청 실패");
+      intakeStatus(form, typeof error.detail === "string" ? error.detail : "신청 실패");
       form.querySelector("[data-intake-status]").setAttribute("role", "alert");
       if (Array.isArray(error.detail)) for (const issue of error.detail) {
         const field = issue.loc?.map((name) => name === "requested_tools" ? "requested_tool" : name).find((name) => form.elements.namedItem(String(name)));
@@ -4396,7 +4436,14 @@ document.addEventListener("toggle", (event) => {
   if (event.target.matches("details[open]")) charts.mountVisible(event.target);
 }, true);
 document.addEventListener("change", (event) => {
-  if (event.target.name === "requested_transport" && event.target.form?.dataset.form === "intake") resetIntakeTools(event.target.form);
+  if (event.target.matches('#dialog-form [name="execution"]')) {
+    for (const section of event.target.form.querySelectorAll("[data-intake-execution]")) {
+      section.hidden = section.dataset.intakeExecution !== event.target.value;
+    }
+  }
+  if (event.target.matches('[data-form="intake"] [name="data_class"]')) {
+    $("[data-intake-data-class]", event.target.form).textContent = t(DATA_CLASS[event.target.value]);
+  }
   if (event.target.matches("[data-registry-export]")) {
     const select = event.target, format = select.value;
     if (!["csv", "json"].includes(format)) return;
@@ -4409,15 +4456,26 @@ document.addEventListener("change", (event) => {
     const users = event.target.form.querySelector("[data-audience-users]");
     users.hidden = event.target.value !== "selected";
     if (users.hidden) users.querySelector("input").value = "";
+  }
+  if (event.target.form?.id === "intake-approve") {
+    const { name, value, form } = event.target;
+    if (name === "audience" || name === "valid_days") {
+      $("[data-intake-approval-scope]").textContent = `${AUDIENCE[form.elements.audience.value]} · ${VALIDITY[form.elements.valid_days.value]}`;
+    } else if (name.startsWith("action_")) {
+      $("[data-intake-action]", event.target.closest(".intake-tool")).textContent = ACTION[value];
+    } else if (name.startsWith("destinations_")) {
+      $("[data-intake-hosts]", event.target.closest(".intake-tool")).textContent = destinationText(hostList(value));
+    }
     return;
   }
   if (event.target.matches("[data-intake-kind]")) {
-    for (const label of event.target.form.querySelectorAll("[data-intake-field]")) {
-      label.hidden = label.dataset.intakeField !== event.target.value;
-      if (label.hidden) for (const input of label.querySelectorAll("input,textarea")) input.value = "";
+    const form = event.target.form;
+    for (const section of form.querySelectorAll("[data-intake-field]")) {
+      section.hidden = section.dataset.intakeField !== event.target.value;
+      const control = section.matches("fieldset") ? section : section.querySelector("input,select");
+      control.disabled = section.hidden;
     }
-    event.target.form.elements.requested_transport.value = event.target.value === "repository" ? "stdio" : "streamable-http";
-    resetIntakeTools(event.target.form);
+    resetIntakeTools(form);
     return;
   }
   if (event.target.closest("[data-policy-filter]")) { applyPolicyFilters(true); return; }
@@ -4463,7 +4521,7 @@ document.addEventListener("input", (event) => {
     event.target.setAttribute("aria-invalid", "false");
     const error = intake.querySelector(`[data-field-error="${event.target.name}"]`);
     if (error) error.textContent = "";
-    if (["endpoint_url", "repository_url"].includes(event.target.name)) resetIntakeTools(intake);
+    if (event.target.name === "endpoint_url") resetIntakeTools(intake);
   }
   if (event.target.matches("[data-feed-search]")) {
     const input = event.target;
