@@ -108,7 +108,8 @@ def tool_reviews(row: dict, tools: list[dict], addressed: frozenset | set = froz
     # Only tools with an address argument get suggested destinations; an argument name alone grants nothing.
     # The transfer grade follows the request's data grade: PAC-12 pairs destination and grade exactly, so a
     # 「내부」 server proposed at 「공개」 would block every call to its approved destination. 「중요」 never transfers.
-    grade = row.get("data_class") if row.get("data_class") in ("public", "nonimportant") else "public"
+    stated = row.get("data_class") or (row.get("risk_input") or {}).get("data_class")
+    grade = stated if stated in ("public", "nonimportant") else "public"
     return {t["name"]: {"purpose": row["purpose"][:200], "asset": row["display_name"][:200],
                         "destinations": suggested_destinations(row, t) if t["name"] in addressed else [],
                         "inputs": list((t.get("input_schema") or {}).get("properties") or {}),
