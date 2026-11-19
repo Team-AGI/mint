@@ -10,8 +10,8 @@ import json
 import posixpath
 import re
 import time
-from urllib.parse import urlsplit
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from jsonschema import Draft202012Validator
 from psycopg.types.json import Jsonb
