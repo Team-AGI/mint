@@ -229,7 +229,7 @@ const REVIEW_KIND = {
   "server-deregister": "게이트웨이 등록 해제", "contract-reapprove": "계약 재승인", "addon-result": "외부 게이트웨이 실행 결과",
   "litellm-sync": "외부 게이트웨이 동기화",
   "automatic-suspension": "자동 중지", "automatic-suspension-resume": "자동 중지 해제",
-  "user-server-suspend": "이용 중지", "user-server-resume": "이용 재개", "account-restore": "계정 복구",
+  "user-server-suspend": "이용 중지", "user-server-resume": "이용 재개", "account-restore": "계정 복구", "account-status": "계정 상태 변경",
   "server-audience": "사용 대상 변경", "upstream-credential-connect": "계정 연결", "upstream-credential-disconnect": "계정 연결 해제",
   "call-request": "중대 영향 요청", "call-explanation-view": "중대 영향 설명 열람", "call-approve": "중대 영향 승인",
   "call-reject": "중대 영향 거부", "call-revoke": "중대 영향 번복",
@@ -237,7 +237,7 @@ const REVIEW_KIND = {
   "disposal-reconciled": "폐기 상태 복원", "disposal-integrity-failure": "폐기 목록 확인 실패",
 };
 
-const REVIEW_OUTCOME = { approved: ["allow", "승인"], rejected: ["block", "거부"], refused: ["block", "본인 승인 차단"], held: ["alert", "보류"], recorded: ["outline", "기록됨"], failed: ["block", "확인 실패"], verified: ["outline", "동기화 완료"] };
+const REVIEW_OUTCOME = { approved: ["allow", "승인"], rejected: ["block", "거부"], refused: ["block", "본인 승인 차단"], held: ["alert", "보류"], recorded: ["outline", "기록됨"], forced: ["alert", "단독 승인"], failed: ["block", "확인 실패"], verified: ["outline", "동기화 완료"] };
 const SCAN_STATE = { DONE: ["allow", "완료"], FAILED: ["block", "실패"] };
 const UNSUPPORTED_POLICY = new Set(["PAC-05-DELEGATION-UNSUPPORTED"]);
 const INTAKE_STATUS = {
@@ -1404,11 +1404,19 @@ function relatedBody(related) {
 function decisionAction(r) {
   if (!["Block", "Alert", "Approval"].includes(r.decision)) return "";
   const consent = /CONSENT/.test(r.policy_id || "");
-  const href = consent ? `#/my?${new URLSearchParams({ t: "consent", server: r.server || r.server_id || "", tool: r.tool || r.tool_name || "" })}`
+  const ownConsent = consent && (!viewer.admin || r.principal === viewer.principal);
+  const href = ownConsent ? `#/my?${new URLSearchParams({ t: "consent", server: r.server || r.server_id || "", tool: r.tool || r.tool_name || "" })}`
     : /SHADOW/.test(r.policy_id || "") ? shadowLink(r.device_id || r.evidence?.endpoint_id, r.evidence?.record_kind, r.evidence?.record_id) : "";
+  const stop = viewer.admin && !r.invalid && r.decision === "Block" && r.principal && r.principal !== viewer.principal
+    && ["employee", "partner"].includes(r.role);
+  const serverHref = viewer.admin && r.server_name ? `#/servers/${encodeURIComponent(r.server)}` : "";
   return kv([["사유", r.reason || policyLabel(r.policy_id) || "—"],
     ["실행", r.outcome_axes?.execution || (r.executed ? "실행됨" : r.attempted ? "실행 미확인" : "실행 안 함")],
-    ["조치", href ? html`<a class="btn sm" href="${href}">${consent ? "도구 이용 동의" : "미등록 MCP 보기"}</a>` : "—"]]);
+    ["조치", href || stop || serverHref ? html`<div class="row-actions">
+      ${href ? html`<a class="btn sm" href="${href}">${ownConsent ? "도구 이용 동의" : "미등록 MCP 보기"}</a>` : ""}
+      ${stop ? html`<button class="btn sm danger" data-act="account-stop" data-principal="${r.principal}" data-decision="${r.id}">계정 중지</button>` : ""}
+      ${serverHref ? html`<a class="btn sm" href="${serverHref}">MCP 서버 보기</a>` : ""}
+    </div>` : ""]]);
 }
 
 async function showDecision(id) {
@@ -1500,7 +1508,7 @@ async function showApproval(id) {
   const a = approvalRows.find((row) => row.id === id);
   if (!a) return;
   const controls = a.pending ? html`<button class="btn danger" data-act="reject" data-id="${a.id}">거부</button>
-    ${a.own ? chip("outline", "본인 요청") : html`<button class="btn primary" data-act="approve" data-id="${a.id}">승인</button>`}` : "";
+    ${a.own && !viewer.solo_approval ? chip("outline", "본인 요청") : html`<button class="btn primary" data-act="approve" data-id="${a.id}">${a.own ? "단독 승인" : "승인"}</button>`}` : "";
   if (a.explanation) {
     const bundle = await gw(`approvals/${id}/evidence`);
     const kinds = { "call-request": "요청", "call-explanation-view": "설명 열람", "call-approve": "승인", "call-reject": "거부", "call-revoke": "번복" };
@@ -2540,8 +2548,13 @@ async function intakeDetail(id, tab) {
   const r = report.request, evidence = r.evidence || {};
   const registered = r.registered_server_id ? (await gw("registry").catch(() => null))?.registrations?.[r.registered_server_id] : null;
   let out = null;
-  if (viewer.admin && !r.own && APPROVABLE.includes(r.status) && (!r.registered_server_id || r.endpoint_reapproval_required)) {
-    out = await api(`/api/mcp-requests/${id}/approval-preview`, { method: "POST", body: {} }).catch(() => null);
+  let previewError = "";
+  if (viewer.admin && (!r.own || viewer.solo_approval) && APPROVABLE.includes(r.status) && (!r.registered_server_id || r.endpoint_reapproval_required)) {
+    try {
+      out = await api(`/api/mcp-requests/${id}/approval-preview`, { method: "POST", body: {} });
+    } catch (error) {
+      previewError = error.message;
+    }
   }
   lastDocument = report;
   intakeApproval = out ? { id, out } : null;
@@ -2560,7 +2573,7 @@ async function intakeDetail(id, tab) {
     { key: "summary", label: "요약", body: html`<div class="stack">${out ? html`
       ${panel("신청 정보", intakeProposalView(out))}
       ${panel("승인 범위", html`<form id="intake-approve" class="stack form" data-form="intake-approve">${intakeScopeFields(out)}</form>`)}
-    ` : ""}${by.summary?.body || (out ? "" : by.contract.body)}</div>` },
+    ` : ""}${previewError ? html`<div class="note warn">${previewError}</div>` : ""}${by.summary?.body || (out ? "" : by.contract.body)}</div>` },
     ...(by.findings || by.secrets || by.sbom ? [{ key: "scan", label: "검사", body: part(["findings", "secrets", "sbom"]) }] : []),
     { key: "scope", label: "범위·권한", body: scopeBody },
     { key: "risk", label: "위험·영향평가", body: by.risk.body },
@@ -2865,8 +2878,7 @@ function terminationFollowup(d) {
   return panel(closed ? "종결 후 확인 항목" : "확인 및 조치", html`${rows.length ? html`<table class="data"><thead><tr><th>대상</th><th>확인 사항</th><th>다음 조치</th></tr></thead><tbody>
     ${rows.map(({ target, gaps, task }) => html`<tr><td>${target.label}</td><td>${gaps.length ? gaps.map((gap) => html`<span class="sub">${gap}</span>`) : TARGET_STATUS[target.status]?.[1] || "—"}</td>
       <td><button class="btn sm" data-act="target" data-id="${target.id}">${task}</button></td></tr>`)}</tbody></table>` : empty("확인할 항목 없음")}
-    ${!closed ? html`<div class="row-actions">${!d.targets.length ? html`<button class="btn" data-act="add-target">회수 대상 추가</button>` : ""}<button class="btn" data-act="collect">증거 수집</button>
-      ${d.case.status === "ASSESSED" ? html`<button class="btn" data-act="close-case">종결 검토</button>` : html`<button class="btn" data-act="assess">판정</button>`}</div>` : ""}`, { flush: rows.length > 0 });
+    ${!closed && !d.targets.length ? html`<div class="row-actions"><button class="btn" data-act="add-target">회수 대상 추가</button></div>` : ""}`, { flush: rows.length > 0 });
 }
 
 function terminationHistory(d) {
@@ -2894,7 +2906,9 @@ async function caseView(caseId, tab) {
         actions: html`${c.grade ? html`<button class="btn" data-act="report">판정서</button>` : ""}
           ${c.deployment === "provider" ? html`<button class="btn" data-act="disclosure">고지 요청서</button>` : ""}
           ${closed ? html`<button class="btn" data-act="reopen-case">종료 처리 재개</button>` : ""}
-          ${!closed ? html`<button class="btn" data-act="collect">증거 수집</button><button class="btn primary" data-act="assess">판정</button>` : ""}
+          ${!closed ? html`<button class="btn ${c.status !== "ASSESSED" ? "primary" : ""}" data-act="assess" data-collect="${c.status !== "ASSESSED"}">${c.status === "ASSESSED" ? "재판정" : "증거 수집·판정"}</button>
+            ${rowMenu(html`<button type="button" data-act="collect">수집 항목 선택</button>
+              ${c.status !== "ASSESSED" ? html`<button type="button" data-act="assess">현재 증거로 판정</button>` : ""}`)}` : ""}
           ${c.status === "ASSESSED" ? html`<button class="btn danger solid" data-act="close-case">종결</button>` : ""}` })}
         <ol class="stepper" aria-label="종료 판정 절차">${procedureState(d).map((s, i) => html`
           <li class="step ${s.done ? "done" : ""} ${s.now ? "now" : ""} ${s.gap ? "gap" : ""}"><span class="n">${s.done ? "✓" : i + 1}</span><b>${s.title}</b></li>`)}</ol>`,
@@ -2971,7 +2985,9 @@ function showTarget(id) {
     { key: "criteria", label: "기준", body: t.criteria ? html`<div class="crit">${["C1", "C2", "C3", "C4"].map((k) => html`<div class="c"><h4>${CRITERIA[k]}
       ${chip(t.criteria[k].met ? "allow" : "block", t.criteria[k].met ? "충족" : "미충족")}</h4>
       ${t.criteria[k].gaps.length ? html`<ul>${t.criteria[k].gaps.map((g) => html`<li>${g}</li>`)}</ul>` : ""}</div>`)}</div>` : empty("미판정") },
-    { key: "evidence", label: "증거", n: own.length, body: html`<div class="evidence">${own.map(evidenceItem)}</div>${own.length ? "" : empty("증거 없음")}` },
+    { key: "evidence", label: "증거", n: own.length, body: html`
+      ${currentCase.case.status !== "CLOSED" ? html`<div class="row-actions"><button class="btn sm" data-act="add-evidence" data-target="${t.id}">이 대상의 증거 등록</button></div>` : ""}
+      <div class="evidence">${own.map(evidenceItem)}</div>${own.length ? "" : empty("증거 없음")}` },
   ]);
 }
 
@@ -3626,12 +3642,12 @@ const ACTIONS = {
   },
   async approve(el) {
     const a = approvalRows.find((row) => row.id === el.dataset.id);
-    if (!a?.pending || a.own) return;
+    if (!a?.pending || (a.own && !viewer.solo_approval)) return;
     let r;
     if (a?.explanation) {
       const b = await gw(`approvals/${a.id}/evidence`);
-      const fd = await ask({ title: "중대 영향 호출 승인", fields: html`${impactExplanation(b.explanation)}${APPROVAL_WINDOW_FIELD()}
-        <label class="check"><input type="checkbox" name="confirmed" required /> 요청 범위·정책 근거 확인</label>`, confirm: "승인" });
+      const fd = await ask({ title: "중대 영향 호출 승인", fields: html`${impactExplanation(b.explanation)}${APPROVAL_WINDOW_FIELD()}`,
+        confirm: "범위 확인 및 승인" });
       if (!fd) return;
       r = await gw(`approvals/${a.id}/approve`, { method: "POST", body: { evidence_sha256: b.evidence_sha256, reason: "scope_confirmed",
         window_minutes: Number(fd.get("window_minutes") ?? 30) } });
@@ -3708,6 +3724,23 @@ const ACTIONS = {
     if (!fd) return;
     const r = await api(`/api/accounts/${el.dataset.id}/status`, { method: "PUT", body: { status: fd.get("status"), note: fd.get("note") || "" } });
     await reload();
+    toast(r.message);
+  },
+  async "account-stop"(el) {
+    const { accounts } = await api("/api/accounts");
+    const a = accounts.find((account) => account.token === el.dataset.principal);
+    if (!a || a.user_id === viewer.user_id || !["employee", "partner"].includes(a.role)) {
+      toast("이 호출의 사용자 계정을 확인할 수 없습니다.", true); return;
+    }
+    if (a.status !== "active") { toast("이미 사용할 수 없는 계정입니다."); return; }
+    const fd = await ask({ title: `${a.display_name || a.user_id} 계정 중지`,
+      body: "이 사용자의 로그인과 모든 MCP 이용이 중지됩니다.",
+      fields: html`${kv([["사용자", a.user_id], ["호출", `#${el.dataset.decision}`]])}
+        ${field.text("note", "메모 (선택)", 'maxlength="240"')}`, confirm: "계정 중지", danger: true });
+    if (!fd) return;
+    const r = await api(`/api/accounts/${encodeURIComponent(a.user_id)}/status`, { method: "PUT", body: {
+      status: "disabled", note: fd.get("note").trim(), decision_id: Number(el.dataset.decision) } });
+    el.hidden = true;
     toast(r.message);
   },
   async "account-rename"(el) {
@@ -4006,7 +4039,7 @@ const ACTIONS = {
     } finally { form.dataset.discoverBusy = "false"; el.disabled = false; }
   },
   async "server-suspend"(el) {
-    const fd = await ask({ title: `긴급 중지 · ${el.dataset.name}`, body: "이 서버의 호출이 즉시 차단됩니다.", fields: field.text("reason", "사유", 'required minlength="4" maxlength="500"'),
+    const fd = await ask({ title: `긴급 중지 · ${el.dataset.name}`, body: "이 서버의 호출이 즉시 차단됩니다.", fields: field.text("reason", "사유 (선택)", 'maxlength="500"'),
       confirm: "중지", danger: true });
     if (!fd) return;
     await gw(`ops/servers/${encodeURIComponent(el.dataset.id)}/suspend`, { method: "POST", body: { reason: fd.get("reason").trim() } });
@@ -4174,7 +4207,7 @@ const ACTIONS = {
     const grade = el.dataset.grade;
     const fd = await ask({
       title: `종료 시작 · ${el.dataset.name}`, body: `이 MCP 서버의 호출이 즉시 차단됩니다.${grade ? ` 예상 결과: ${GRADE[grade] || ""}` : ""}`,
-      fields: field.area("reason", "종료 사유", 'required minlength="10" maxlength="1000"'),
+      fields: field.area("reason", "종료 사유 (선택)", 'maxlength="1000"'),
       confirm: "차단하고 종료 시작", danger: true });
     if (!fd) return;
     const d = await gw("termination/cases", { method: "POST", body: { relationship_id: el.dataset.id, reason: fd.get("reason") } });
@@ -4195,8 +4228,8 @@ const ACTIONS = {
     const r = await gw(`termination/cases/${currentCase.case.id}/collect`, { method: "POST", body: { kinds: chosen } });
     toast(`증거 ${r.collected.length}건을 기록했습니다.`); reload();
   },
-  async assess() {
-    const d = await gw(`termination/cases/${currentCase.case.id}/assess`, { method: "POST" });
+  async assess(el) {
+    const d = await gw(`termination/cases/${currentCase.case.id}/assess`, { method: "POST", body: { collect: el.dataset.collect === "true" } });
     toast(`판정 ${GRADE[d.case.grade]}`, d.case.grade === "T3"); reload(); refreshBadges();
   },
   async "revoke-credential"(el) {
@@ -4224,26 +4257,33 @@ const ACTIONS = {
       body: { kind: fd.get("kind"), label: fd.get("label"), holder: fd.get("holder"), discovered_by: fd.get("discovered_by"), note: fd.get("note") || null } });
     toast("대상을 추가했습니다."); reload();
   },
-  async "add-evidence"() {
+  async "add-evidence"(el) {
     const kinds = Object.fromEntries(Object.entries(currentCase.evidence_kinds).map(([k, m]) => [k, m.label]));
     const targets = Object.fromEntries([["", "케이스 전체"], ...currentCase.targets.map((t) => [t.id, t.label])]);
+    const target = currentCase.targets.find((t) => t.id === el.dataset.target);
     const fd = await ask({ title: "증거 등록",
-      fields: html`${field.select("kind", "종류", kinds, "provider-attestation")}${field.select("target_id", "대상", targets)}
-        ${field.text("subject", "식별자", 'required maxlength="300"')}${field.text("source", "출처", 'required maxlength="300"')}
+      fields: html`${field.select("kind", "종류", kinds, "provider-attestation")}
+        ${target ? kv([["대상", target.label]]) : html`${field.select("target_id", "대상", targets)}
+          <div data-evidence-subject>${field.text("subject", "케이스 전체의 증거 식별자", 'required maxlength="300"')}</div>`}
+        ${field.text("source", "출처", 'required maxlength="300"')}
         ${field.area("statement", "내용", 'maxlength="1000"')}`, confirm: "등록" });
     if (!fd) return;
     await gw(`termination/cases/${currentCase.case.id}/evidence`, { method: "POST", body: {
-      kind: fd.get("kind"), subject: fd.get("subject"), source: fd.get("source"), target_id: fd.get("target_id") || null,
+      kind: fd.get("kind"), subject: String(fd.get("subject") || "").trim(), source: fd.get("source").trim(),
+      target_id: target?.id || fd.get("target_id") || null,
       detail: fd.get("statement") ? { statement: fd.get("statement") } : {} } });
     toast("증거를 등록했습니다."); reload();
   },
   async "close-case"() {
-    const t3 = currentCase.case.grade === "T3";
-    const fd = await ask({ title: `종결 · ${GRADE[currentCase.case.grade]}`,
-      fields: html`${field.area("note", "종결 사유", 'required maxlength="1000"')}${t3 ? field.area("risk_acceptance", "위험 수용 근거", 'required maxlength="1000"') : ""}`,
+    const { id, grade, engagement_label, criteria } = currentCase.case;
+    const fd = await ask({ title: `종결 · ${GRADE[grade]}`, body: criteria?.rationale || "",
+      fields: html`${kv([["이용 관계", engagement_label]])}
+        ${grade === "T3" ? field.area("risk_acceptance", "위험 수용 근거", 'required maxlength="1000"') : ""}
+        <details class="intake-options"><summary>종결 메모 (선택)</summary>${field.area("note", "메모", 'maxlength="1000"')}</details>`,
       confirm: "종결", danger: true });
     if (!fd) return;
-    await gw(`termination/cases/${currentCase.case.id}/close`, { method: "POST", body: { note: fd.get("note"), risk_acceptance: fd.get("risk_acceptance") || null } });
+    await gw(`termination/cases/${id}/close`, { method: "POST", body: {
+      note: fd.get("note"), risk_acceptance: fd.get("risk_acceptance") || null, expected_grade: grade } });
     toast("종결했습니다."); reload(); refreshBadges();
   },
   async "reopen-case"() {
@@ -4367,6 +4407,7 @@ const FORMS = {
 };
 
 const inboxContext = () => ({ html, raw, chip, kv, when, ago, short, empty, panel, head, kpiStrip, chartBox, json, entityRef, charts, openDrawer,
+  get soloApproval() { return viewer?.solo_approval; },
   api, gw, ACTION, DATA_CLASS, INTAKE_STATUS, MANAGED_STATE, ALERT_KIND, decisionChip, policyLabel, impactExplanation, alertTarget, alertDetail, alertReason,
   alertGroups, alertsSeen, markAlertsSeen, approvalHistory, setApprovalLists, setLedger: (rows) => { policyLedger = rows; }, reload, refreshBadges });
 let inboxTimer = null;
@@ -4437,6 +4478,13 @@ document.addEventListener("toggle", (event) => {
   if (event.target.matches("details[open]")) charts.mountVisible(event.target);
 }, true);
 document.addEventListener("change", (event) => {
+  if (event.target.matches('#dialog-form [name="target_id"]')) {
+    const subject = $("[data-evidence-subject]", event.target.form);
+    if (subject) {
+      subject.hidden = Boolean(event.target.value);
+      subject.querySelector("input").disabled = subject.hidden;
+    }
+  }
   if (event.target.matches('#dialog-form [name="execution"]')) {
     for (const section of event.target.form.querySelectorAll("[data-intake-execution]")) {
       section.hidden = section.dataset.intakeExecution !== event.target.value;

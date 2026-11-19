@@ -404,7 +404,7 @@ async def me(authorization: str | None = Header(default=None)):
     # 직원도 사내 저장소를 읽을 수 있다. 다운로드는 /auth/gitea가 막는다.
     git_url = os.getenv("GITEA_PUBLIC_URL", "") if field else ""
     # The org page keeps company repositories separate from the personal dashboard.
-    return {**console_user(user), "synthetic": not field,
+    return {**console_user(user), "principal": user["principal"], "solo_approval": review.solo_operator(user), "synthetic": not field,
             "managed_required": user["managed_required"],
             "managed_devices": await db.fetch_all(
                 "SELECT endpoint_id,hostname,managed_state,status,heartbeat_at,last_seen_at FROM endpoint_agents WHERE owner_token=%s AND device_epoch IS NOT NULL",
@@ -806,6 +806,7 @@ def gitea_browse_only(request: Request, *, from_cookie: bool) -> bool:
 class AccountStatus(StrictModel):
     status: Literal["active", "disabled", "locked"]
     note: str = Field(default="", max_length=300)
+    decision_id: int | None = Field(default=None, gt=0)
 
 
 class AccountInvitations(StrictModel):
@@ -951,16 +952,30 @@ async def set_account_status(user_id: str, request: AccountStatus,
         # 마지막 관리자가 스스로를 잠그면 되돌릴 사람이 남지 않는다.
         raise HTTPException(409, "자기 계정은 스스로 중지하거나 잠글 수 없습니다.")
     from . import local_jobs
-    target = await db.fetch_one('SELECT token FROM principals WHERE user_id=%s',(user_id,))
-    if target and request.status!='active':
-        await local_jobs.quiesce(user_token=target['token'])
-    row = await db.fetch_one(
-        """UPDATE principals SET status=%s, status_changed_by=%s, status_changed_at=now()
-           WHERE user_id=%s AND status <> 'deleted'
-           RETURNING token, user_id, email, display_name, role, status, status_changed_by, status_changed_at""",
-        (request.status, user["principal"], user_id))
-    if not row:
+    target = await db.fetch_one("SELECT token FROM principals WHERE user_id=%s AND status <> 'deleted'", (user_id,))
+    if not target:
         raise HTTPException(404, "관리대장에 없는 계정입니다.")
+    scope = {"status": request.status}
+    if request.decision_id is not None:
+        decision = await db.fetch_one(
+            "SELECT id FROM decisions WHERE id=%s AND user_token=%s AND decision='Block'",
+            (request.decision_id, target["token"]))
+        if request.status != "disabled" or not decision:
+            raise HTTPException(409, "이 계정의 차단 기록을 확인할 수 없습니다.")
+        scope["decision_id"] = decision["id"]
+    if request.status != "active":
+        await local_jobs.quiesce(user_token=target['token'])
+    async with db.transaction() as connection:
+        row = await db.fetch_one(
+            """UPDATE principals SET status=%s, status_changed_by=%s, status_changed_at=now()
+               WHERE token=%s AND user_id=%s AND status <> 'deleted'
+               RETURNING token, user_id, email, display_name, role, status, status_changed_by, status_changed_at""",
+            (request.status, user["principal"], target["token"], user_id), connection=connection)
+        if not row:
+            raise HTTPException(404, "관리대장에 없는 계정입니다.")
+        reason = request.note.strip() or (f"호출 #{request.decision_id}" if request.decision_id else None)
+        await review.record_event("account-status", "recorded", "account", row["token"], user["principal"],
+                                  reason=reason, scope=scope, connection=connection)
     if request.status != "active":
         await user_credentials.remove(row["token"], None, "계정 " + ("중지" if request.status == "disabled" else "잠금"), user["principal"])
         await upstream.release_pool(None, row["token"], "principal")

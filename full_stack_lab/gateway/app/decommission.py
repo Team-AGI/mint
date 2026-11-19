@@ -387,7 +387,9 @@ async def add_evidence(case_id: str, kind: str, subject: str, source: str, detai
                        observed_at: datetime | None = None, target_id: str | None = None) -> dict:
     """Evidence without a subject and a time is not evidence. The content
     hash lets a later reader tell whether an attached value was changed."""
-    await _case(case_id)
+    case = await _case(case_id)
+    if case["status"] == "CLOSED":
+        raise ValueError("종결된 케이스에는 증거를 추가하지 않습니다.")
     if kind not in EVIDENCE_KINDS:
         raise ValueError("알 수 없는 증거 종류입니다.")
     if not subject.strip():
@@ -801,34 +803,46 @@ async def assess(case_id: str, actor: str) -> dict:
                 "target_grades": {g: sum(1 for t in judged if t["grade"] == g) for g in ("T1", "T2", "T3")},
                 "provider_operated": _is_provider(server), "post_cutover": case_activity,
                 "assessed_at": _now().isoformat()}
-    await db.execute(
-        "UPDATE termination_cases SET status='ASSESSED', grade=%s, criteria=%s, assessed_by=%s, assessed_at=now() WHERE id=%s",
-        (grade, Jsonb(criteria), actor, case_id))
+    changed = await db.execute(
+        """UPDATE termination_cases SET status='ASSESSED', grade=%s, criteria=%s, assessed_by=%s, assessed_at=now()
+           WHERE id=%s AND status <> 'CLOSED'""", (grade, Jsonb(criteria), actor, case_id))
+    if not changed:
+        raise ValueError("종결된 케이스입니다. 상태를 다시 확인하세요.")
     return await case_detail(case_id)
 
 
-async def close_case(case_id: str, actor: str, note: str, risk_acceptance: str | None = None) -> dict:
+async def close_case(case_id: str, actor: str, note: str, risk_acceptance: str | None = None,
+                     expected_grade: str | None = None) -> dict:
     """T3 does not close without someone accepting the residual risk by name."""
     case = await _case(case_id)
     if case["status"] == "CLOSED":
         raise ValueError("이미 종결된 케이스입니다.")
     if case["status"] != "ASSESSED" or not case["grade"]:
         raise ValueError("판정하지 않은 케이스(또는 근거가 바뀐 뒤 다시 판정하지 않은 케이스)는 종결할 수 없습니다.")
-    if not note.strip():
-        raise ValueError("종결 사유를 적어야 합니다.")
-    if case["grade"] == "T3" and not (risk_acceptance or "").strip():
+    grade = case["grade"]
+    if expected_grade and grade != expected_grade:
+        raise ValueError("종료 판정이 바뀌었습니다. 최신 결과를 확인하세요.")
+    note = note.strip() or f"관리자 종결 · {GRADE_LABEL[grade]}"
+    risk_acceptance = (risk_acceptance or "").strip() or None
+    if grade == "T3" and not risk_acceptance:
         raise ValueError("T3(판단 불가)는 잔존 범위를 산정할 수 없으므로 위험 수용 근거 없이 종결할 수 없습니다.")
-    disposal.remember("server", case["server_id"], case["server_id"], {"case_id": str(case_id), "actor": actor})
     async with db.transaction() as connection:
+        current = await db.fetch_one(
+            """SELECT id FROM termination_cases WHERE id=%s AND status='ASSESSED' AND grade=%s
+               AND assessed_at IS NOT DISTINCT FROM %s FOR UPDATE""",
+            (case_id, grade, case["assessed_at"]), connection=connection)
+        if not current:
+            raise ValueError("종료 판정이 바뀌었습니다. 최신 결과를 확인하세요.")
+        disposal.remember("server", case["server_id"], case["server_id"], {"case_id": str(case_id), "actor": actor})
         await connection.execute(
             """UPDATE termination_cases SET status='CLOSED', closed_by=%s, closed_at=now(), close_note=%s,
                  risk_accepted_by=%s, risk_accepted_at = CASE WHEN %s::text IS NULL THEN NULL ELSE now() END,
                  risk_acceptance_note=%s WHERE id=%s""",
-            (actor, note.strip(), actor if risk_acceptance else None, risk_acceptance, risk_acceptance or None, case_id))
+            (actor, note, actor if risk_acceptance else None, risk_acceptance, risk_acceptance, case_id))
         await connection.execute(
             """UPDATE mcp_servers SET lifecycle='RETIRED', status='DISABLED', status_reason=%s,
                  lifecycle_changed_at=now(), lifecycle_changed_by=%s WHERE id=%s""",
-            (f"폐기 종결({case['grade']}) · {note.strip()[:160]}", actor, case["server_id"]))
+            (f"폐기 종결({grade}) · {note[:160]}", actor, case["server_id"]))
         if case.get("relationship_id"):
             await connection.execute("UPDATE usage_relationships SET status='TERMINATED' WHERE id=%s", (case["relationship_id"],))
         from . import litellm_sync

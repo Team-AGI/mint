@@ -642,9 +642,13 @@ async def register_server(request: dict, actor: str) -> dict:
     intake = await db.fetch_one("SELECT * FROM mcp_intake_requests WHERE id=%s", (intake_id,))
     if not intake or intake["status"] != "APPROVED" or not intake.get("reviewed_by"):
         raise ValueError("승인된 도입 신청만 등록할 수 있습니다.")
-    if await review.same_person(intake["submitted_by"], intake["reviewed_by"]):
-        raise ValueError("신청자와 승인자가 같아 등록할 수 없습니다.")
     evidence = intake.get("evidence") or {}
+    approved_risk = evidence.get("risk_assessment") or {}
+    recorded = approved_risk.get("approvers") or []
+    forced = (approved_risk.get("solo_operator") is True and review.solo_mode_enabled()
+              and intake["reviewed_by"] in recorded and all([await review.is_root(person) for person in recorded]))
+    if not forced and await review.same_person(intake["submitted_by"], intake["reviewed_by"]):
+        raise ValueError("신청자와 승인자가 같아 등록할 수 없습니다.")
     proposal = evidence.get("approval_proposal")
     if proposal:
         scope = evidence.get("one_click_scope") or {}
@@ -760,15 +764,11 @@ async def register_server(request: dict, actor: str) -> dict:
     # The tier is read again from the stated input the approval was made on, and the approval
     # must have recorded that same input. A data grade above what the applicant stated understates the tier.
     stated = risk_tier.assess(intake.get("risk_input"))
-    approved_risk = (intake.get("evidence") or {}).get("risk_assessment") or {}
     if stated["status"] != "ok" or approved_risk.get("input_sha256") != stated["input_sha256"]:
         raise ValueError("등록할 수 없습니다: 승인 때 확인한 영향평가 입력이 없거나 바뀌었습니다. 다시 신청하세요.")
     rule = risk_tier.APPROVAL[stated["tier"]]
     # root in single-operator mode approved alone on purpose. The mark alone proves nothing: the mode
     # must be on now and every recorded approver must be root.
-    recorded = approved_risk.get("approvers") or []
-    forced = bool(approved_risk.get("solo_operator") and review.solo_mode_enabled() and recorded
-                  and all([await review.is_root(person) for person in recorded]))
     if rule["approvers"] > 1 and not forced:
         approvers = []
         for person in approved_risk.get("approvers") or []:

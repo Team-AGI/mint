@@ -159,7 +159,8 @@ async function approvalBody(c, item) {
     c.gw(`activity?${new URLSearchParams({ principal: a.requested_by, server: a.server_id, event_kind: "tools/call", limit: "5" })}`).catch(() => null),
     a.explanation ? c.gw(`approvals/${a.id}/evidence`).catch(() => null) : null]);
   const rows = (recent?.rows || []).slice(0, 5);
-  const buttons = a.own ? c.chip("outline", "본인 요청") : decide(c, ["reject", "거부", `data-id="${a.id}"`], ["approve", "승인", `data-id="${a.id}"`]);
+  const buttons = a.own && !c.soloApproval ? c.chip("outline", "본인 요청")
+    : decide(c, ["reject", "거부", `data-id="${a.id}"`], ["approve", a.own ? "단독 승인" : "승인", `data-id="${a.id}"`]);
   return { title: item.summary, body: c.html`${c.kv([
     ["요청자", `${a.display_name || a.requested_by}${a.department ? ` · ${a.department}` : ""}`],
     ["도구", c.html`<code>${a.server_id}.${a.tool}</code>`], ["행위", c.ACTION[a.action] || a.action], ["데이터 등급", c.DATA_CLASS[a.data_class] || a.data_class],

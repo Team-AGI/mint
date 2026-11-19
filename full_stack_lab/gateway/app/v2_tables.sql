@@ -256,7 +256,7 @@ ALTER TABLE mcp_tools ADD COLUMN IF NOT EXISTS scope_review jsonb;
 CREATE TABLE IF NOT EXISTS approval_events (
   id bigserial PRIMARY KEY,
   kind text NOT NULL,
-  outcome text NOT NULL CHECK (outcome IN ('recorded', 'approved', 'rejected', 'refused', 'held')),
+  outcome text NOT NULL,
   target_kind text NOT NULL,
   target_id text NOT NULL,
   actor text NOT NULL,
@@ -265,6 +265,9 @@ CREATE TABLE IF NOT EXISTS approval_events (
   scope jsonb NOT NULL DEFAULT '{}',
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE approval_events DROP CONSTRAINT IF EXISTS approval_events_outcome_check;
+ALTER TABLE approval_events ADD CONSTRAINT approval_events_outcome_check
+  CHECK (outcome IN ('recorded', 'approved', 'rejected', 'refused', 'held', 'forced'));
 CREATE INDEX IF NOT EXISTS approval_events_target_idx ON approval_events(target_kind, target_id, id);
 
 -- A decision row that is known to be invalid stays in the ledger (its hash chain must not

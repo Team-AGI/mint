@@ -345,13 +345,14 @@ async def ops_status(_: dict = Depends(admin_caller)) -> dict:
 
 
 class OpsSuspend(StrictModel):
-    reason: str = Field(min_length=4, max_length=500)
+    reason: str = Field(default="", max_length=500)
 
 
 @app.post("/api/ops/servers/{server_id}/suspend")
 async def ops_suspend(server_id: str, request: OpsSuspend, user: dict = Depends(admin_caller)) -> dict:
     try:
-        stopped = await ops_response.suspend(server_id, "operator", request.reason, {"requested_by": user["principal"]})
+        stopped = await ops_response.suspend(server_id, "operator", request.reason.strip() or "관리자 긴급 중지",
+                                             {"requested_by": user["principal"]})
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     if not stopped:
@@ -1284,7 +1285,7 @@ class TerminationOpen(StrictModel):
     # A usage relationship id (UR-...) or, for compatibility, a server id.
     server_id: str | None = Field(default=None, min_length=1, max_length=120)
     relationship_id: str | None = Field(default=None, min_length=1, max_length=120)
-    reason: str = Field(min_length=10, max_length=1000)
+    reason: str = Field(default="", max_length=1000)
     engagement_label: str | None = Field(default=None, max_length=300)
 
 
@@ -1309,7 +1310,7 @@ class EvidenceCreate(StrictModel):
     kind: Literal["revocation-response", "introspection", "provider-attestation",
                   "gateway-denial", "liveness-probe", "endpoint-inventory", "credential-check",
                   "resource-rejection", "session-termination", "operator-statement"]
-    subject: str = Field(min_length=1, max_length=300)
+    subject: str = Field(default="", max_length=300)
     source: str = Field(min_length=1, max_length=300)
     detail: dict = Field(default_factory=dict)
     target_id: str | None = None
@@ -1317,8 +1318,13 @@ class EvidenceCreate(StrictModel):
 
 
 class CaseClose(StrictModel):
-    note: str = Field(min_length=1, max_length=1000)
+    note: str = Field(default="", max_length=1000)
     risk_acceptance: str | None = Field(default=None, max_length=1000)
+    expected_grade: Literal["T1", "T2", "T3"] | None = None
+
+
+class CaseAssessment(StrictModel):
+    collect: bool = False
 
 
 class CaseReopen(StrictModel):
@@ -1386,7 +1392,8 @@ async def termination_open(request: TerminationOpen, user: dict = Depends(admin_
         target = request.relationship_id or request.server_id
         if not target:
             raise HTTPException(422, "relationship_id 또는 server_id가 필요합니다.")
-        return await decommission.open_case(target, request.reason, user["principal"], request.engagement_label)
+        return await decommission.open_case(target, request.reason.strip() or "관리자가 MCP 이용 관계 종료를 요청했습니다.",
+                                            user["principal"], request.engagement_label)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
 
@@ -1429,9 +1436,18 @@ async def termination_add_evidence(case_id: str, request: EvidenceCreate,
             observed = datetime.fromisoformat(request.observed_at.replace("Z", "+00:00"))
         except ValueError:
             raise HTTPException(422, "observed_at은 ISO 8601 시각이어야 합니다.")
+    subject = request.subject.strip()
+    if request.target_id:
+        target = await db.fetch_one("SELECT label FROM revocation_targets WHERE id::text=%s AND case_id::text=%s",
+                                    (request.target_id, case_id))
+        if not target:
+            raise HTTPException(422, "이 종료 처리에 속한 회수 대상을 선택하세요.")
+        subject = subject or target["label"]
+    if not request.source.strip():
+        raise HTTPException(422, "증거 출처를 입력하세요.")
     try:
         return await decommission.add_evidence(
-            case_id, request.kind, request.subject, request.source,
+            case_id, request.kind, subject, request.source.strip(),
             request.detail, user["principal"], observed, request.target_id)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
@@ -1447,8 +1463,11 @@ async def termination_probe(case_id: str, user: dict = Depends(admin_caller)) ->
 
 
 @app.post("/api/termination/cases/{case_id}/assess")
-async def termination_assess(case_id: str, user: dict = Depends(admin_caller)) -> dict:
+async def termination_assess(case_id: str, request: CaseAssessment | None = None,
+                             user: dict = Depends(admin_caller)) -> dict:
     try:
+        if request and request.collect:
+            await decommission.collect(case_id, ["gateway", "endpoint", "credentials"], user["principal"])
         return await decommission.assess(case_id, user["principal"])
     except ValueError as exc:
         raise HTTPException(409, str(exc))
@@ -1459,7 +1478,7 @@ async def termination_close(case_id: str, request: CaseClose,
                             user: dict = Depends(admin_caller)) -> dict:
     try:
         return await decommission.close_case(
-            case_id, user["principal"], request.note, request.risk_acceptance)
+            case_id, user["principal"], request.note, request.risk_acceptance, request.expected_grade)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
 
