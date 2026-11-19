@@ -2535,8 +2535,9 @@ async def managed_source_plan(row: dict, decision: dict) -> dict:
                   "personal_data": "general", "external_transfer": False, "permission": "r",
                   "users": 1, "autonomy": "supervised"}
     risk = risk_tier.assess(risk_input)
-    if risk["status"] != "ok" or risk_tier.APPROVAL[risk["tier"]]["approvers"] != 1:
+    if risk["status"] != "ok":
         return {}
+    # 등급은 등록 때 실제 도구로 다시 매긴다. 여기서는 승인자만 기록한다.
     approver = decision["actor"]
     solo_mode = review.solo_mode_enabled()
     risk.update(approvers=[approver], solo_mode=solo_mode,
@@ -2605,11 +2606,10 @@ async def publish_previous_source_approvals() -> None:
                     await publish_source_approval(row, "system")
             except Exception:
                 LOG.exception("Could not publish previously approved source for intake %s", row["id"])
-        repository, commit = intake_proposal.GHIDRA_SOURCE
         for row in await db.fetch_all(
                 """SELECT * FROM mcp_intake_requests WHERE status='APPROVED' AND registered_server_id IS NULL
-                   AND repository_url=%s AND commit_sha=%s AND evidence ? 'source_approval'
-                   AND NOT (evidence ? 'managed_source')""", (repository, commit)):
+                   AND intake_kind='repository' AND evidence ? 'source_approval'
+                   AND NOT (evidence ? 'managed_source')"""):
             evidence = row["evidence"]
             decision = evidence["source_approval"]
             if not decision.get("expires_at") or datetime.fromisoformat(decision["expires_at"]) <= datetime.now(UTC):
@@ -2686,6 +2686,8 @@ async def preview_intake_approval(request_id: UUID, request: ApprovalPreview, us
     proposed_risk = intake_proposal.risk_input(row, tools)
     addressed = {t["name"] for t in tools if review.has_address_argument(t.get("input_schema"))}
     scopes = intake_proposal.tool_reviews(row, tools, addressed)
+    for name in addressed:
+        scopes[name]["open_addresses"] = True
     proposal = {"server_id": sid, "endpoint": endpoint, "catalog": found, "provenance": record, "basis": intake_proposal.basis(row),
                 "local": local, "local_execution": {k: found.get(k) for k in ("observer_device", "observer_uid", "isolation_scope",
                                                                              "user_mapping", "image_signature")} if local and found else None,
@@ -2789,6 +2791,8 @@ async def approve_and_register(request_id: UUID, request: OneClickApproval, user
                 raise HTTPException(409, "검사 결과가 유효하지 않습니다. 다시 검사하세요.")
             critical = (gate.get("critical") or {}).get("count", 0)
             reason = request.critical_reason.strip() or (pending or {}).get("critical_reason", "")
+            if critical and not reason and review.solo_operator(user):
+                reason = "단독 운영 root 승인: 보고서의 치명적 발견을 확인하고 수용"
             if critical and len(reason) < review.RISK_ACCEPTANCE_MIN_REASON:
                 raise HTTPException(422, "치명적 발견이 있습니다. 수용 사유를 10자 이상 입력하세요.")
             assessed = proposal["risk"]
@@ -2804,7 +2808,8 @@ async def approve_and_register(request_id: UUID, request: OneClickApproval, user
             if assessed.get("tier") not in risk_tier.APPROVAL:
                 raise HTTPException(409, "위험 등급을 산정하지 못했습니다. 다시 열어 확인하세요.")
             # Very high risk asks for a written reason on every approval click.
-            risk_reason = request.risk_reason.strip()
+            risk_reason = request.risk_reason.strip() or (
+                "단독 운영 root 승인: 도구 기본 통과, 필요 시 사후 차단" if solo else "")
             # root in single-operator mode carries out the approval alone (forced); the record keeps solo_operator.
             verdict, message = risk_tier.decide(assessed["tier"], max(len(approvers), risk_tier.APPROVAL[assessed["tier"]]["approvers"])
                                                 if solo else len(approvers), risk_reason)

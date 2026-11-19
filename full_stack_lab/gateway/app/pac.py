@@ -72,7 +72,8 @@ def scope(principal: dict, server: str, tool: str, action: str, resources: list,
     envelope = spec.get("allowed_principals")
     if envelope is not None:
         terms = (spec.get("tool_reviews") or {}).get(tool) or {}
-        allowed = registry.permits(envelope, principal["token"]) and tool in spec.get("tools", {})
+        allowed = (registry.permits(envelope, principal["token"]) and tool in spec.get("tools", {})
+                   and tool not in (spec.get("blocked_tools") or []))
         # A remote review approves the explicitly selected feature and declared
         # data class. An argument-induced escalation is outside that approval.
         allowed = allowed and action == spec.get("tools", {}).get(tool)

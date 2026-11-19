@@ -1137,6 +1137,12 @@ async def consume_enrollment(raw: str, key: str, hostname: str, username: str, u
     return await db.fetch_one("SELECT * FROM endpoint_agents WHERE endpoint_id=%s", (endpoint_id,))
 
 
+def blocked_tools(server_id: str) -> list[str]:
+    """관리자가 승인 뒤 막은 도구. PC 하네스 설정에도 넣어 게이트웨이에 가기 전에 숨긴다."""
+    from . import registry
+    return sorted((registry.server(server_id) or {}).get("blocked_tools") or [])
+
+
 async def managed_policy(device: dict, *, connection=None) -> dict:
     from . import connectors, pac, registry
     if not device.get("device_epoch"):
@@ -1231,7 +1237,8 @@ async def managed_policy(device: dict, *, connection=None) -> dict:
                     # allow them again. The Gateway servers stay pre-approved in the harness; the Gateway decides.
                     "syncClaudeAiPlugins": False, "syncClaudeAiSkills": False,
                     "allowManagedPermissionRulesOnly": True,
-                    "permissions": {"allow": [f"mcp__{s}" for s in routes], "deny": controls["claude_tools_denied"]},
+                    "permissions": {"allow": [f"mcp__{s}" for s in routes],
+                                    "deny": controls["claude_tools_denied"] + [f"mcp__{s}__{t}" for s in routes for t in blocked_tools(s)]},
                     # User, project and plugin hooks run commands the harness starts; a hook could call the
                     # header helper the harness profile may run. Only managed hooks load, and the
                     # same gate narrows statusLine and fileSuggestion to managed values.
@@ -1250,7 +1257,9 @@ async def managed_policy(device: dict, *, connection=None) -> dict:
         # Per-app blocks go in requirements: `enabled = false` from any layer wins and the user cannot turn it back on.
         disabled_apps = "".join(f"\n[apps.{a}]\nenabled = false\n" for a in controls["codex_apps_disabled"])
         codex_servers = "".join(f'\n[mcp_servers.{s}]\nurl = {json_document(u).strip()}\nhttp_headers_helper = {json_document(helper).strip()}\n'
-                                'default_tools_approval_mode = "approve"\nstartup_timeout_sec = 30\ntool_timeout_sec = 300\n' for s, u in routes.items())
+                                'default_tools_approval_mode = "approve"\nstartup_timeout_sec = 30\ntool_timeout_sec = 300\n'
+                                + (f'disabled_tools = {json_document(blocked_tools(s)).strip()}\n' if blocked_tools(s) else "")
+                                for s, u in routes.items())
         files = {
             "managed-mcp.json": json_document({"mcpServers": {s: {"type": "http", "url": url,
                         "headersHelper": helper, "timeout": 300000} for s, url in routes.items()}}),

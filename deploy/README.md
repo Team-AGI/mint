@@ -61,7 +61,7 @@ cd mint/deploy
 | `FIELD_CONSOLE_TLS`, `FIELD_CONSOLE_NAME`, `FIELD_CONSOLE_CERT_FILE`, `FIELD_CONSOLE_KEY_FILE` | 위 콘솔 인증서 방식과 이름·파일 경로입니다. |
 | `MODEL_PROXY_PORT`, `MINT_NET_PREFIX` | 모델 프록시 포트 `3128`, 내부 네트워크 접두부 `10.246`입니다. |
 | `DB_POOL_MAX`, `DB_ADMIN_POOL_MAX`, `DB_ADMIN_STATEMENT_TIMEOUT_MS` | 게이트웨이의 도구 판정 풀과 콘솔 집계 풀은 기본 최대 10개와 3개의 DB 연결을 사용합니다. 호출 기록 분석·대시보드 요약·지연·상태 조회의 집계 SQL에는 기본 10초 제한이 적용됩니다. |
-| `ROOT_SOLO_APPROVAL` | 기본 `0`으로 신청자와 다른 관리자가 승인합니다. `1`은 root 단독 승인 모드입니다. |
+| `ROOT_SOLO_APPROVAL` | 기본 `1`(root 단독 승인)입니다. 관리자 여러 명이 서로 승인하게 하려면 `0`으로 둡니다. |
 | `ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_HOURS` | 접근 토큰 10분, 갱신 토큰 8시간입니다. |
 | `FLOW_MATCH_MODE` | 기본 `coarse`입니다. 중요정보를 읽은 뒤 다른 서버에 쓰기·실행하는 흐름의 판정 방식입니다. |
 | `TERMINATION_SLA_DAYS`, `CONNECTOR_REVIEW_DAYS` | 종료 기한과 연결 검토 주기입니다. 각각 기본 14일입니다. |

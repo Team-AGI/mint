@@ -149,7 +149,7 @@ def reviewed_tools(server_id: str) -> set[str]:
     Console registration serves only the approved tools that carry a scope review."""
     approved = set((server(server_id) or {}).get("tools", {}))
     spec = _runtime_spec(server_id)
-    return approved if spec is None else approved & set(spec.get("tool_reviews") or {})
+    return approved if spec is None else (approved & set(spec.get("tool_reviews") or {})) - set(spec.get("blocked_tools") or [])
 
 
 def source_ref(spec: dict) -> str:
@@ -213,7 +213,8 @@ async def sync() -> dict:
         # appears or disappears is still a change to the contract.
         for name in sorted(set(approved) | set(pinned_tools)):
             action = approved.get(name, "x")
-            enabled = name in approved and (console_reviews is None or name in console_reviews)
+            enabled = (name in approved and (console_reviews is None or name in console_reviews)
+                       and name not in (spec.get("blocked_tools") or []))
             review = (spec.get("tool_reviews") or {}).get(name)
             await db.execute(
                 """INSERT INTO mcp_tools(server_id, name, action, enabled, scope_review)

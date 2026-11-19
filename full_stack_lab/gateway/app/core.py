@@ -644,10 +644,8 @@ async def register_server(request: dict, actor: str) -> dict:
         raise ValueError("승인된 도입 신청만 등록할 수 있습니다.")
     evidence = intake.get("evidence") or {}
     managed_source = evidence.get("managed_source")
-    if managed_source and (request.get("local") != managed_source or not request["tools"]
-                           or set(request["tools"]) - intake_proposal.GHIDRA_TOOLS
-                           or any(action != "r" for action in request["tools"].values())):
-        raise ValueError("검증된 관리형 소스 실행 범위와 다릅니다.")
+    if managed_source and request.get("local") != managed_source:
+        raise ValueError("승인한 PC 실행 사양과 다릅니다.")
     approved_risk = evidence.get("risk_assessment") or {}
     recorded = approved_risk.get("approvers") or []
     forced = (approved_risk.get("solo_operator") is True and review.solo_mode_enabled()
@@ -979,6 +977,27 @@ async def review_tool_scopes(server_id: str, reviews: dict, actor: str) -> dict:
             "unreviewed": sorted(set(spec["tools"]) - set(spec["tool_reviews"]))}
 
 
+async def set_tool_blocked(server_id: str, tool: str, blocked: bool, actor: str) -> dict:
+    """승인 뒤 도구 하나를 막거나 푼다. 재승인 없이 다음 호출부터 적용되고, PC 정책에서도 빠진다."""
+    async with REGISTER_LOCK:
+        doc = registry.runtime()
+        spec = doc["servers"].get(server_id)
+        if not spec or not spec.get("intake_id"):
+            raise LookupError(server_id)
+        if tool not in spec.get("tools", {}):
+            raise ValueError(f"이 서버에 등록된 도구가 아닙니다: {tool}")
+        names = set(spec.get("blocked_tools") or [])
+        names = names | {tool} if blocked else names - {tool}
+        spec["blocked_tools"] = sorted(names)
+        await review.record_event("tool-block" if blocked else "tool-unblock", "approved", "server", server_id, actor,
+                                  scope={"tool": tool})
+        doc["history"].append({"type": "tool-blocked" if blocked else "tool-unblocked", "server_id": server_id,
+                               "tool": tool, "actor": actor, "at": datetime.now(UTC).isoformat(timespec="seconds")})
+        registry.save_runtime(doc)
+        await registry.sync()
+    return {"server_id": server_id, "blocked_tools": spec["blocked_tools"]}
+
+
 async def update_server_audience(server_id: str, audience: str, users: list[str], actor: str) -> dict:
     """Widen or narrow who may use an approved server. The reviewed tools, actions and argument
     constraints stay as approved; only the people change. Narrowing takes effect on the next call."""
@@ -1155,15 +1174,14 @@ async def apply_risk_grace(now: datetime | None = None) -> list[dict]:
 
 
 async def provision_managed_sources() -> None:
-    """Map an existing intake decision onto a supported managed execution profile."""
-    repository, commit = intake_proposal.GHIDRA_SOURCE
+    """도입 승인 한 번으로 PC 실행을 등록한다. 신청자 PC에서 관찰한 도구는 모두 허용하고(기본 통과),
+    제한은 관리자가 등록 뒤에 도구·직원·서버 단위로 건다."""
     rows = await db.fetch_all(
         """SELECT * FROM mcp_intake_requests WHERE status='APPROVED' AND registered_server_id IS NULL
-           AND repository_url=%s AND commit_sha=%s AND evidence->>'managed_source_pending'='true'
-           ORDER BY reviewed_at""", (repository, commit))
+           AND intake_kind='repository' AND evidence->>'managed_source_pending'='true' ORDER BY reviewed_at""")
     for row in rows:
+        evidence = row["evidence"]
         try:
-            evidence = row["evidence"]
             grant = evidence["source_approval"]
             local = evidence["managed_source"]
             sid = intake_proposal.server_id(row)
@@ -1177,25 +1195,38 @@ async def provision_managed_sources() -> None:
                 raise ValueError(" / ".join(item["message"] for item in gate["blockers"]))
             endpoint = local_jobs.PREFIX + sid
             found = await discover_for_registration(endpoint, local, str(row["id"]))
-            tools = [t for t in found["tools"] if t["name"] in intake_proposal.GHIDRA_TOOLS]
-            if not tools or any(t["warnings"] for t in tools):
-                raise ValueError("검증된 로컬 조회 도구 계약이 없습니다.")
-            risk_input = evidence["managed_risk_input"]
-            risks = risk_tier.assess(risk_input)
-            if risks["input_sha256"] != evidence["risk_assessment"]["input_sha256"]:
-                raise ValueError("자동 배포의 영향 평가가 변경되었습니다.")
+            tools = found["tools"]
+            if not tools:
+                raise ValueError("신청자 PC에서 도구 목록을 받지 못했습니다.")
+            # 영향평가는 실제 도구로 다시 매긴다. 승인자는 그대로이고, 단독 운영의 root 승인은 등급과 관계없이 유효하다.
+            stated = (row.get("risk_input") or {}).get("data_class") or evidence["managed_risk_input"]["data_class"]
+            risk_input = {**intake_proposal.risk_input(row, tools), "data_class": stated}
+            risk = {**evidence["risk_assessment"], **risk_tier.assess(risk_input)}
+            if risk.get("solo_operator") and not risk.get("written_reason"):
+                risk["written_reason"] = "단독 운영 root의 도입 승인: 도구 기본 통과, 필요 시 사후 차단"
+            # 처리 표식: 같은 승인을 두 작업이 동시에 집어도 한쪽만 이어 간다.
+            current = {**evidence, "risk_assessment": risk, "managed_risk_input": risk_input,
+                       "managed_source_claim": uuid.uuid4().hex}
+            current.pop("managed_source_error", None)
             if not await db.fetch_one(
-                    """UPDATE mcp_intake_requests SET risk_input=%s WHERE id=%s AND status='APPROVED'
+                    """UPDATE mcp_intake_requests SET risk_input=%s, evidence=%s WHERE id=%s AND status='APPROVED'
                        AND registered_server_id IS NULL AND evidence=%s RETURNING id""",
-                    (Jsonb(risk_input), row["id"], Jsonb(evidence))):
+                    (Jsonb(risk_input), Jsonb(current), row["id"], Jsonb(evidence))):
                 continue
-            reviews = intake_proposal.tool_reviews({**row, "data_class": risk_input["data_class"]}, tools)
+            evidence = current
+            names = {tool["name"] for tool in tools}
+            purpose = (row["purpose"] or "").strip()
+            reviews = intake_proposal.tool_reviews(
+                {**row, "data_class": risk_input["data_class"],
+                 "purpose": purpose if len(purpose) >= 4 else f"{row['display_name']} 사용",
+                 "display_name": row["display_name"] if len(row["display_name"].strip()) >= 2 else sid}, tools, names)
             for item in reviews.values():
-                item["consent"] = False
+                item.update(consent=False, open_addresses=True)
             await register_server({
                 "server_id": sid, "endpoint": endpoint, "intake_id": str(row["id"]), "local": local,
-                "catalog_hash": found["catalog_hash"], "tools": {tool["name"]: "r" for tool in tools},
+                "catalog_hash": found["catalog_hash"], "tools": {t["name"]: intake_proposal.action(t) for t in tools},
                 "tool_reviews": reviews, "data_class": risk_input["data_class"], "valid_days": 90,
+                "poisoning_ack": True,
                 "display_name": row["display_name"], "source_url": row["repository_url"], "commit_sha": row["commit_sha"],
                 "supplier": "github.com", "purpose": row["purpose"],
             }, row["reviewed_by"])
@@ -1206,7 +1237,12 @@ async def provision_managed_sources() -> None:
             if not linked:
                 await deregister_server(sid, "system", "도입 승인이 자동 등록 도중 변경됨")
         except Exception as exc:
-            logging.getLogger(__name__).warning("Managed source %s is awaiting provisioning: %s", row["id"], _root_cause(exc))
+            reason = _root_cause(exc)
+            logging.getLogger(__name__).warning("Managed source %s is awaiting provisioning: %s", row["id"], reason)
+            if evidence.get("managed_source_error") != str(reason)[:300]:
+                await db.execute(
+                    """UPDATE mcp_intake_requests SET evidence=%s WHERE id=%s AND registered_server_id IS NULL AND evidence=%s""",
+                    (Jsonb({**evidence, "managed_source_error": str(reason)[:300]}), row["id"], Jsonb(evidence)))
 
 
 async def managed_source_watch() -> None:

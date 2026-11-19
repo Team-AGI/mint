@@ -527,7 +527,8 @@ async def registry_view(user: dict = Depends(admin_caller)) -> dict:
             # which servers came from a Console registration, and until when they may be used.
             "registrations": {sid: {key: spec.get(key) for key in ("valid_until", "intake_id", "registered_by", "registered_at",
                                                                     "data_class", "tools", "tool_reviews", "provenance",
-                                                                    "allowed_principals", "supplier_assurance", "supplier_assurance_unconfirmed", "residency", "residency_review", "risk_assessment")}
+                                                                    "allowed_principals", "supplier_assurance", "supplier_assurance_unconfirmed", "residency", "residency_review", "risk_assessment",
+                                                                    "blocked_tools")}
                                   | {"address_tools": sorted(name for name, constraint in (spec.get("parameter_constraints") or {}).items()
                                                              if review.pinned_addresses(constraint))}
                                   | {"risk_review": risk_tier.legacy_review(spec, doc.get("risk_tier_grace_started_at"))}
@@ -1074,6 +1075,20 @@ async def registry_residency_review(server_id: str, request: ResidencyReview,
 class ServerAudience(StrictModel):
     audience: Literal["all", "requester", "selected"]
     users: list[str] = Field(default_factory=list, max_length=100)
+
+
+class ToolBlock(StrictModel):
+    blocked: bool
+
+
+@app.post("/api/registry/servers/{server_id}/tools/{tool}/block")
+async def registry_tool_block(server_id: str, tool: str, request: ToolBlock, user: dict = Depends(admin_caller)) -> dict:
+    try:
+        return await core.set_tool_blocked(server_id, tool, request.blocked, user["principal"])
+    except LookupError as exc:
+        raise HTTPException(404, "도입 승인으로 Console에서 등록한 서버가 아닙니다.") from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.post("/api/registry/servers/{server_id}/audience")

@@ -215,7 +215,7 @@ const APPROVAL_STATUS = {
 const REVIEW_KIND = {
   "user-consent": "사용자 동의", "intake-approve": "운영자 승인", "intake-source-approve": "소스 승인", "contract-review": "계약 검토", "risk-accept": "위험 수용",
   "risk-lapse": "위험 수용 만료", "intake-reject": "거부", "intake-hold": "보류", "provenance-mismatch": "보류",
-  "server-register": "게이트웨이 등록", "tool-scope-review": "범위 심사", "residency-review": "처리 위치 검토", "intake-cosign": "1차 승인", "risk-input": "영향평가 입력",
+  "server-register": "게이트웨이 등록", "tool-scope-review": "범위 심사", "tool-block": "도구 차단", "tool-unblock": "도구 차단 해제", "residency-review": "처리 위치 검토", "intake-cosign": "1차 승인", "risk-input": "영향평가 입력",
   "tool-sunset": "자동 비활성", "tool-sunset-extension": "이용 기간 연장", "tool-sunset-review": "도구 재심사",
   "tool-sunset-check": "이용 상태 확인", "tool-approval-extension": "승인 기간 연장",
   "auto-suspend-count-failed": "자동 중지 집계 실패",
@@ -1666,10 +1666,12 @@ async function showServer(id) {
       ["사용 기한", registration ? `${when(registration.valid_until)} · ${DATA_CLASS[registration.data_class] || ""}` : ""],
       ["등록", registration ? `${registration.registered_by} · ${when(registration.registered_at)}` : ""],
       ["마지막 확인", s.last_seen_at ? `${when(s.last_seen_at)} · ${ago(s.last_seen_at)}` : ""]]) },
-    { key: "tools", label: "도구·범위", n: tools.length, body: html`<div class="stack"><table class="data"><thead><tr><th>도구</th><th>행위</th><th>상태</th><th>마지막 사용</th><th>기한</th><th>이용 상태</th></tr></thead><tbody>
-      ${tools.map((t) => { const [lastUse, deadline, sunsetStatus] = toolSunsetRow(id, t.name); return html`<tr><td><code>${t.name}</code></td><td>${chip({ r: "allow", w: "alert", x: "block" }[t.action] || "", ACTION[t.action] || t.action)}</td>
-        <td>${!t.enabled ? (registration?.tools?.[t.name] ? chip("block", "범위 미심사") : chip("outline", "미승인")) : t.contract_ok ? chip("allow", "일치") : chip("alert", "불일치")}</td>
-        <td>${lastUse}</td><td>${deadline}</td><td>${sunsetStatus}</td></tr>`; })}</tbody></table>
+    { key: "tools", label: "도구·범위", n: tools.length, body: html`<div class="stack"><table class="data"><thead><tr><th>도구</th><th>행위</th><th>상태</th><th>마지막 사용</th><th>기한</th><th>이용 상태</th><th></th></tr></thead><tbody>
+      ${tools.map((t) => { const [lastUse, deadline, sunsetStatus] = toolSunsetRow(id, t.name); const blocked = (registration?.blocked_tools || []).includes(t.name);
+        return html`<tr><td><code>${t.name}</code></td><td>${chip({ r: "allow", w: "alert", x: "block" }[t.action] || "", ACTION[t.action] || t.action)}</td>
+        <td>${blocked ? chip("block", "차단") : !t.enabled ? (registration?.tools?.[t.name] ? chip("block", "범위 미심사") : chip("outline", "미승인")) : t.contract_ok ? chip("allow", "일치") : chip("alert", "불일치")}</td>
+        <td>${lastUse}</td><td>${deadline}</td><td>${sunsetStatus}</td>
+        <td class="num">${registration?.intake_id && registration.tools?.[t.name] ? html`<button class="btn sm ${blocked ? "" : "danger"}" type="button" data-act="tool-block" data-id="${s.id}" data-tool="${t.name}" data-blocked="${blocked ? "" : "1"}">${blocked ? "해제" : "차단"}</button>` : ""}</td></tr>`; })}</tbody></table>
       ${registration ? scopeTable(registration.tools, registration.tool_reviews, registration.data_class, registration.intake_id ? s.id : null, registration.address_tools || []) : ""}</div>` },
     { key: "audience", label: "사용 대상", body: html`${kv([["대상", registration?.intake_id ? audienceText(registration.allowed_principals) : "—"]])}
       ${rels.length ? html`<h3>이용 관계</h3>${kv(rels.map((u) => [u.purpose, html`${u.organization} · ${(REL_STATUS[u.status] || [, u.status])[1]}
@@ -4011,6 +4013,11 @@ const ACTIONS = {
     if (!fd) return;
     await gw(`ops/servers/${encodeURIComponent(el.dataset.id)}/suspend`, { method: "POST", body: { reason: fd.get("reason").trim() } });
     closeDrawer(); toast("서버를 중지했습니다."); reload();
+  },
+  async "tool-block"(el) {
+    const blocked = el.dataset.blocked === "1";
+    await gw(`registry/servers/${encodeURIComponent(el.dataset.id)}/tools/${encodeURIComponent(el.dataset.tool)}/block`, { method: "POST", body: { blocked } });
+    closeDrawer(); toast(blocked ? "도구를 차단했습니다." : "도구 차단을 해제했습니다."); reload();
   },
   async "server-resume"(el) {
     const fd = await ask({ title: `재개 · ${el.dataset.name}`, fields: field.text("note", "확인 내용", 'required minlength="4" maxlength="500"'), confirm: "재개" });

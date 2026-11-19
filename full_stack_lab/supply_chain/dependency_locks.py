@@ -61,11 +61,23 @@ def projects(checkout, repository, subpath):
             local = found.get(normalized(Requirement(text).name))
             if local and local not in chosen:
                 queue.append(local)
-    name = tomllib.loads((folder / 'pyproject.toml').read_text(encoding='utf-8')).get('project', {}).get('name', '')
-    module = normalized(name).replace('-', '_')
-    entry = next((candidate for candidate in (folder / 'src' / module / '__main__.py', folder / module / '__main__.py')
-                  if candidate.is_file()), None)
-    return chosen, entry.relative_to(checkout).as_posix() if entry else ''
+    project = tomllib.loads((folder / 'pyproject.toml').read_text(encoding='utf-8')).get('project', {})
+    return chosen, entrypoint(checkout, folder, project)
+
+
+def entrypoint(checkout, folder, project):
+    """`python -m 패키지`로 띄울 `__main__.py`. 패키지 이름과 [project.scripts]의 모듈을 차례로 찾고,
+    `src/`·폴더 바로 아래·한 단계 아래(`python/패키지`처럼 배포 패키지를 하위 폴더에 둔 저장소)를 본다."""
+    modules = [normalized(project.get('name', '')).replace('-', '_')]
+    modules += [str(target).split(':')[0].split('.')[0] for target in (project.get('scripts') or {}).values()]
+    for module in dict.fromkeys(m for m in modules if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', m)):
+        candidates = [folder / 'src' / module / '__main__.py', folder / module / '__main__.py']
+        candidates += sorted(path / module / '__main__.py' for path in folder.iterdir()
+                             if path.is_dir() and not path.name.startswith(('.', 'test')))
+        entry = next((c for c in candidates if c.is_file()), None)
+        if entry:
+            return entry.relative_to(checkout).as_posix()
+    return ''
 
 
 def requirements(folders):

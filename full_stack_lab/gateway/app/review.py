@@ -295,6 +295,8 @@ def normalize_tool_reviews(tools: dict[str, str], reviews: dict | None, reviewer
                             "inputs": inputs, "mask": bool(item.get("mask")), "grade": grade,
                             "accepts_from": accepts, "consent": bool(item.get("consent")),
                             "reviewed_by": reviewer, "reviewed_at": stamp}
+        if item.get("open_addresses"):
+            normalized[name]["open_addresses"] = True  # 도입 승인 기본 통과: 주소는 HTTPS만 묻고 전송 정책이 판정한다
         normalized[name].update(high_impact.normalize(item))
     return normalized
 
@@ -375,7 +377,9 @@ def derived_constraints(advertised: dict[str, dict], reviews: dict[str, dict]) -
     out = {}
     for name, item in reviews.items():
         schema = json.loads(json.dumps(advertised[name].get("input_schema") or {}))
-        pattern = address_pattern(item.get("destinations") or [])
+        # 기본 통과로 승인한 도구는 목적지를 적지 않았으면 HTTPS 주소를 받고, 외부 전송은 전송 정책이 판정한다.
+        open_scope = item.get("open_addresses") and not item.get("destinations")
+        pattern = "^https://" if open_scope else address_pattern(item.get("destinations") or [])
         for node in _address_nodes(schema):
             node["pattern"] = pattern
         if item.get("inputs") is not None:
