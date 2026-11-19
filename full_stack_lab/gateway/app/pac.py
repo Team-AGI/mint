@@ -262,8 +262,10 @@ def transfer_binding(spec: dict, feature: str, destinations: list[str]) -> tuple
         return True, []
     destination = destinations[0] if len(destinations) == 1 else ""
     terms = (spec.get("tool_reviews") or {}).get(feature) or {}
-    covered = bool(destination) and any(destination == h or (h.startswith("*.") and destination.endswith(h[1:]))
-                                        for h in terms.get("destinations") or [])
+    # 기본 통과로 승인한 도구(목적지를 적지 않음)는 어느 목적지든 받는다. 보낼 수 있는 데이터 등급 제한은 그대로다.
+    open_scope = bool(terms.get("open_addresses")) and not terms.get("destinations")
+    covered = bool(destination) and (open_scope or any(destination == h or (h.startswith("*.") and destination.endswith(h[1:]))
+                                                       for h in terms.get("destinations") or []))
     pairs = [{"destination_id": destination, "grade": grade, "purpose": terms.get("purpose", "")}
              for grade in GRADES_UP_TO.get(terms.get("grade"), [])] if covered else []
     return False, pairs
