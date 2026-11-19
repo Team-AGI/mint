@@ -4415,6 +4415,20 @@ document.addEventListener("click", (event) => {
     if (!open.contains(event.target) || event.target.closest(".menu button, .menu a")) open.open = false;
   }
 });
+// 관리 메뉴는 표 카드(overflow)에 잘리지 않도록 버튼 기준 fixed로 배치하고, 아래 공간이 모자라면 위로 연다.
+document.addEventListener("toggle", (event) => {
+  const d = event.target;
+  if (!d.matches?.("details.row-menu") || !d.open) return;
+  const menu = d.querySelector(".menu"), b = d.firstElementChild.getBoundingClientRect(), h = menu.offsetHeight, w = menu.offsetWidth, vh = innerHeight;
+  menu.style.left = `${Math.max(8, Math.min(b.right - w, innerWidth - w - 8))}px`;
+  menu.style.top = `${b.bottom + 4 + h <= vh - 8 ? b.bottom + 4 : b.top - 4 - h >= 8 ? b.top - 4 - h : Math.max(8, vh - 8 - h)}px`;
+}, true);
+const closeRowMenus = (event) => {
+  if (event.target?.closest?.(".row-menu .menu")) return;
+  for (const open of document.querySelectorAll("details.row-menu[open]")) open.open = false;
+};
+addEventListener("scroll", closeRowMenus, true);
+addEventListener("resize", closeRowMenus);
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") for (const open of document.querySelectorAll("details.row-menu[open]")) open.open = false;
 });
