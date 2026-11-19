@@ -38,6 +38,7 @@ from .agent_contract import (ACCOUNT_STATUS_REASON, CONSOLE_SCOPE, StrictModel, 
 from .connectors import router as connectors_router
 from .contract import canonical_hash
 from .destination import registration_endpoint
+from .intake_proposal import github_repository_path, github_repository_url
 from .integrations import router as integrations_router
 from .login_throttle import _login_attempts, login_allowed, record_failed_login
 from .idp import router as idp_router
@@ -283,40 +284,6 @@ class ExitTermsReview(StrictModel):
 
 class IntakeRejection(StrictModel):
     note: str = Field(min_length=2, max_length=500)
-
-
-def github_repository_url(value: str) -> str:
-    """Accept a repository identity, not an arbitrary URL the service might fetch."""
-    parsed = urlsplit(value.strip())
-    pieces = [piece for piece in parsed.path.split("/") if piece]
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname not in {"github.com", "www.github.com"}
-        or parsed.username
-        or parsed.password
-        or parsed.port
-        or parsed.query
-        or parsed.fragment
-        or not (len(pieces) == 2 or (len(pieces) >= 5 and pieces[2] == "tree"))
-    ):
-        raise ValueError("https://github.com/조직/저장소 형식의 URL만 제출할 수 있습니다.")
-    owner, repository = pieces[:2]
-    repository = repository.removesuffix(".git")
-    if not owner or not repository or any(part in {".", ".."} for part in (owner, repository)):
-        raise ValueError("유효한 GitHub 조직과 저장소 이름을 입력하세요.")
-    return f"https://github.com/{owner}/{repository}"
-
-
-def github_repository_path(value: str) -> str:
-    """공식 서버 모음처럼 한 저장소에 여러 MCP가 있으면 `.../tree/<브랜치>/<경로>`로 그중 하나를 신청한다.
-
-    복제·검사는 저장소 전체로 그대로 하고, 경로는 같은 저장소의 서로 다른 서버를 구분하는 신청 정보다.
-    """
-    pieces = [piece for piece in urlsplit(value.strip()).path.split("/") if piece]
-    path = "/".join(pieces[4:]) if len(pieces) >= 5 and pieces[2] == "tree" else ""
-    if path and not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*", path):
-        raise ValueError("저장소 안 경로는 영문·숫자·._- 로 된 폴더 경로여야 합니다.")
-    return path
 
 
 async def current_identity(authorization: str | None) -> dict:
@@ -1562,8 +1529,8 @@ async def create_mcp_request(request: McpIntake, authorization: str | None = Hea
              "" if endpoint else repository_path))).fetchone()
         if row and request.endpoint_request_id:
             await connection.execute(
-                "UPDATE endpoint_mcp_requests SET status='CLOSED', closed_by=%s, closed_at=now() WHERE id=%s AND status='OPEN'",
-                (user["principal"], str(request.endpoint_request_id)))
+                "UPDATE endpoint_mcp_requests SET status='CLOSED', intake_id=%s, closed_by=%s, closed_at=now() WHERE id=%s AND status='OPEN'",
+                (row["id"], user["principal"], str(request.endpoint_request_id)))
         if row:
             await review.record_event("user-consent", "recorded", "intake", row["id"], applicant,
                                       applicant=applicant, reason=request.purpose,
@@ -2524,6 +2491,34 @@ async def set_local_run(request_id: UUID, request: LocalRunSpec, user: dict = De
     return {"local_run": spec, "message": "엔드포인트 실행"}
 
 
+@app.post("/api/mcp-requests/{request_id}/source-approve")
+async def approve_intake_source(request_id: UUID, user: dict = Depends(admin_caller)):
+    row = await approval_row(request_id, user)
+    if row["intake_kind"] != "repository" or row["status"] != "VALIDATED" or not row.get("commit_sha"):
+        raise HTTPException(409, "저장소 검사가 끝난 신청만 소스를 승인할 수 있습니다.")
+    record, attestation_blocker = await collect_proposal_provenance(row, row.get("provenance") or {})
+    gate = await review.intake_gate({**row, "provenance": record})
+    blockers = [item["message"] for item in gate["blockers"]]
+    if attestation_blocker:
+        blockers.append(attestation_blocker)
+    if blockers:
+        raise HTTPException(409, " / ".join(blockers))
+    evidence = row.get("evidence") or {}
+    decision = {"commit_sha": row["commit_sha"], "scan_sha256": intake_proposal.scan_basis(gate),
+                "artifact_sha256": (record.get("artifact") or {}).get("sha256"),
+                "actor": user["principal"], "at": datetime.now(UTC).isoformat()}
+    updated = await review.transition(
+        """UPDATE mcp_intake_requests SET evidence=%s, updated_at=now()
+           WHERE id=%s AND status='VALIDATED' AND commit_sha=%s AND evidence=%s AND provenance=%s RETURNING id""",
+        (Jsonb({**evidence, "source_approval": decision}), request_id, row["commit_sha"], Jsonb(evidence),
+         Jsonb(row.get("provenance") or {})),
+        kind="intake-source-approve", outcome="approved", target_kind="intake", target_id=request_id,
+        actor=user["principal"], applicant=row["submitted_by"], scope=decision)
+    if not updated:
+        raise HTTPException(409, "검사 결과가 바뀌었습니다. 보고서를 다시 확인하세요.")
+    return {"message": "검사한 커밋의 소스를 승인했습니다."}
+
+
 @app.post("/api/mcp-requests/{request_id}/approval-preview")
 async def preview_intake_approval(request_id: UUID, request: ApprovalPreview, user: dict = Depends(admin_caller),
                                   authorization: str | None = Header(default=None)):
@@ -2557,7 +2552,7 @@ async def preview_intake_approval(request_id: UUID, request: ApprovalPreview, us
         found = await gateway_proxy("/api/registry/discover", authorization, "POST", discovery(endpoint, local, request_id),
                                     timeout=local_discover_timeout(local))
     else:
-        blockers.append({"code": "execution-missing", "message": "엔드포인트 실행으로 재승인 필요"})
+        blockers.append({"code": "execution-missing", "message": "실행 등록에는 MCP 실행 설정과 도구 확인이 필요합니다."})
     record = intake_proposal.source_record(row, found) if found else row.get("provenance") or {}
     record, provenance_blocker = await collect_proposal_provenance(row, record)
     if provenance_blocker:
@@ -2570,7 +2565,7 @@ async def preview_intake_approval(request_id: UUID, request: ApprovalPreview, us
     tools = [t for t in (found or {}).get("tools", []) if not requested or t["name"] in requested]
     if requested - {t["name"] for t in tools}:
         blockers.append({"code": "tool-missing", "message": "신청한 도구가 사라졌습니다. 새로 신청하세요."})
-    if not tools:
+    if found is not None and not tools:
         blockers.append({"code": "tools-missing", "message": "도구가 없습니다. 실행 계약을 확인하세요."})
     registry_state = await gateway_proxy("/api/registry", authorization)
     proposed_risk = intake_proposal.risk_input(row, tools)

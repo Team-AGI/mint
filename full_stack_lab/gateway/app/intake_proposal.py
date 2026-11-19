@@ -8,6 +8,40 @@ import re
 from urllib.parse import urlsplit
 
 
+def github_repository_url(value: str) -> str:
+    """Accept a repository identity, not an arbitrary URL the service might fetch."""
+    parsed = urlsplit(value.strip())
+    pieces = [piece for piece in parsed.path.split("/") if piece]
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in {"github.com", "www.github.com"}
+        or parsed.username
+        or parsed.password
+        or parsed.port
+        or parsed.query
+        or parsed.fragment
+        or not (len(pieces) == 2 or (len(pieces) >= 5 and pieces[2] == "tree"))
+    ):
+        raise ValueError("https://github.com/조직/저장소 형식의 URL만 제출할 수 있습니다.")
+    owner, repository = pieces[:2]
+    repository = repository.removesuffix(".git")
+    if not owner or not repository or any(part in {".", ".."} for part in (owner, repository)):
+        raise ValueError("유효한 GitHub 조직과 저장소 이름을 입력하세요.")
+    return f"https://github.com/{owner}/{repository}"
+
+
+def github_repository_path(value: str) -> str:
+    """공식 서버 모음처럼 한 저장소에 여러 MCP가 있으면 `.../tree/<브랜치>/<경로>`로 그중 하나를 신청한다.
+
+    복제·검사는 저장소 전체로 그대로 하고, 경로는 같은 저장소의 서로 다른 서버를 구분하는 신청 정보다.
+    """
+    pieces = [piece for piece in urlsplit(value.strip()).path.split("/") if piece]
+    path = "/".join(pieces[4:]) if len(pieces) >= 5 and pieces[2] == "tree" else ""
+    if path and not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*)*", path):
+        raise ValueError("저장소 안 경로는 영문·숫자·._- 로 된 폴더 경로여야 합니다.")
+    return path
+
+
 def digest(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
                                      default=str).encode()).hexdigest()

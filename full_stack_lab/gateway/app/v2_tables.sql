@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS endpoint_mcp_requests (
   closed_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS endpoint_mcp_requests_open_idx ON endpoint_mcp_requests(status, created_at DESC);
+ALTER TABLE endpoint_mcp_requests ADD COLUMN IF NOT EXISTS intake_id uuid REFERENCES mcp_intake_requests(id);
 
 -- Endpoint evidence: where a stored observation came from and whether the stored form
 -- is the form the agent said it sent. NULL origin/provenance = rows written before these columns existed.

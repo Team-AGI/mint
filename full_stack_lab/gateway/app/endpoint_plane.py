@@ -34,7 +34,7 @@ from urllib.parse import urlsplit
 
 from psycopg.types.json import Jsonb
 
-from . import db, server_egress
+from . import db, intake_proposal, review, server_egress
 from .event_correlation import correlation_result
 
 AGENT_PROTOCOL = "1"
@@ -688,8 +688,9 @@ async def self_summary(device: dict, limit: int = 50) -> dict:
     calls = sorted([*calls, *(d for d in ledger if d["decision_id"] not in shown)],
                    key=lambda c: c["called_at"], reverse=True)[:max(1, min(limit, 200))]
     requests = await db.fetch_all(
-        """SELECT server_label AS name, status, created_at FROM endpoint_mcp_requests WHERE endpoint_id=ANY(%s)
-            ORDER BY created_at DESC LIMIT 10""", (lineage,))
+        """SELECT r.server_label AS name, COALESCE(i.status,r.status) AS status, r.created_at
+           FROM endpoint_mcp_requests r LEFT JOIN mcp_intake_requests i ON i.id=r.intake_id
+           WHERE r.endpoint_id=ANY(%s) ORDER BY r.created_at DESC LIMIT 10""", (lineage,))
     # What the console's 「내 신청」 shows: applications in the employee's name, including those an administrator wrote
     # up from this PC's requests.
     applications = await db.fetch_all(
@@ -711,16 +712,58 @@ async def self_summary(device: dict, limit: int = 50) -> dict:
 
 
 async def self_request(device: dict, server_label: str, source_url: str, purpose: str) -> dict:
-    existing = await db.fetch_one(
-        "SELECT id FROM endpoint_mcp_requests WHERE endpoint_id=%s AND server_label=%s AND status='OPEN'",
-        (device["endpoint_id"], server_label))
-    if existing:
-        return {"id": str(existing["id"]), "status": "OPEN", "duplicate": True}
-    row = await db.fetch_one(
-        """INSERT INTO endpoint_mcp_requests(id,endpoint_id,owner_token,server_label,source_url,purpose)
-           VALUES (%s,%s,%s,%s,%s,%s) RETURNING id, status""",
-        (str(uuid.uuid4()), device["endpoint_id"], device.get("owner_token"), server_label, source_url, purpose))
-    return {"id": str(row["id"]), "status": row["status"], "duplicate": False}
+    owner, endpoint_id = device.get("owner_token"), device["endpoint_id"]
+    try:
+        repository = intake_proposal.github_repository_url(source_url)
+        path = intake_proposal.github_repository_path(source_url)
+    except ValueError:
+        repository, path = "", ""
+    request_id = uuid.uuid4()
+    async with db.transaction() as connection:
+        await connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"endpoint-request:{endpoint_id}:{server_label}",))
+        existing = await db.fetch_one(
+            """SELECT id FROM endpoint_mcp_requests WHERE endpoint_id=%s AND server_label=%s AND status='OPEN'""",
+            (endpoint_id, server_label), connection=connection)
+        if existing and not (owner and repository):
+            return {"id": str(existing["id"]), "status": "OPEN", "duplicate": True}
+        if existing:
+            request_id = existing["id"]
+        intake_id = None
+        intake_status, duplicate = "OPEN", False
+        if owner and repository:
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"endpoint-intake:{owner}:{repository}:{path}",))
+            recent = await db.fetch_one(
+                """SELECT id, status FROM mcp_intake_requests
+                   WHERE submitted_by=%s AND repository_url=%s AND repository_path=%s AND intake_kind='repository'
+                     AND status NOT IN ('REJECTED','FAILED') ORDER BY created_at DESC LIMIT 1""",
+                (owner, repository, path), connection=connection)
+            intake_id = recent["id"] if recent else uuid.uuid4()
+            intake_status = recent["status"] if recent else "VALIDATION_QUEUED"
+            duplicate = bool(recent)
+            if not recent:
+                await connection.execute(
+                    """INSERT INTO mcp_intake_requests
+                       (id,submitted_by,display_name,repository_url,repository_path,requested_transport,purpose,status,risk_input)
+                       VALUES (%s,%s,%s,%s,%s,'stdio',%s,'VALIDATION_QUEUED',%s)""",
+                    (intake_id, owner, server_label.strip()[:80] or repository.rsplit("/", 1)[-1],
+                     repository, path, purpose.strip(), Jsonb({"data_class": "nonimportant"})))
+                await review.record_event("user-consent", "recorded", "intake", intake_id, owner, applicant=owner,
+                                          reason=purpose.strip(), scope={"kind": "repository", "transport": "stdio",
+                                          "target": "/".join(filter(None, (repository, path))), "endpoint_id": endpoint_id},
+                                          connection=connection)
+        if existing:
+            await connection.execute(
+                """UPDATE endpoint_mcp_requests SET source_url=%s,purpose=%s,status='CLOSED',
+                   intake_id=%s,closed_at=now() WHERE id=%s AND status='OPEN'""",
+                (source_url, purpose, intake_id, request_id))
+        else:
+            await connection.execute(
+                """INSERT INTO endpoint_mcp_requests(id,endpoint_id,owner_token,server_label,source_url,purpose,status,intake_id,closed_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s THEN now() END)""",
+                (request_id, endpoint_id, owner, server_label, source_url, purpose,
+                 "CLOSED" if intake_id else "OPEN", intake_id, bool(intake_id)))
+    return {"id": str(request_id), "status": intake_status,
+            "intake_id": str(intake_id) if intake_id else None, "duplicate": duplicate}
 
 
 async def endpoint_requests(status: str = "OPEN") -> list[dict]:

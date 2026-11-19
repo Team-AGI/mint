@@ -213,7 +213,7 @@ const APPROVAL_STATUS = {
   NOT_EXECUTED: ["alert", "실행 안 됨"], UNCONFIRMED: ["alert", "실행 미확인"],
 };
 const REVIEW_KIND = {
-  "user-consent": "사용자 동의", "intake-approve": "운영자 승인", "contract-review": "계약 검토", "risk-accept": "위험 수용",
+  "user-consent": "사용자 동의", "intake-approve": "운영자 승인", "intake-source-approve": "소스 승인", "contract-review": "계약 검토", "risk-accept": "위험 수용",
   "risk-lapse": "위험 수용 만료", "intake-reject": "거부", "intake-hold": "보류", "provenance-mismatch": "보류",
   "server-register": "게이트웨이 등록", "tool-scope-review": "범위 심사", "residency-review": "처리 위치 검토", "intake-cosign": "1차 승인", "risk-input": "영향평가 입력",
   "tool-sunset": "자동 비활성", "tool-sunset-extension": "이용 기간 연장", "tool-sunset-review": "도구 재심사",
@@ -2344,7 +2344,7 @@ ROUTES.intake = async (arg, tab, query = new URLSearchParams()) => {
           body: panel("엔드포인트 요청", asked.requests.length ? html`<table class="data"><thead><tr><th>시각</th><th>엔드포인트</th><th>서버</th><th>사용 목적</th><th></th></tr></thead><tbody>
             ${asked.requests.map((r) => html`<tr><td class="small nowrap">${when(r.created_at)}</td><td>${r.hostname}<span class="sub">${r.owner_name || ""}</span></td>
               <td><b>${r.server_label}</b>${r.source_url ? html`<span class="sub mono">${short(r.source_url, 60)}</span>` : ""}</td><td class="small">${short(r.purpose, 120)}</td>
-              <td class="num nowrap"><a class="btn sm primary" href="#/intake?t=new&${new URLSearchParams({ name: r.server_label, purpose: r.purpose, source: r.source_url || "", asked: r.id })}">신청서 작성</a>
+              <td class="num nowrap"><a class="btn sm primary" href="#/intake?t=new&${new URLSearchParams({ name: r.server_label, purpose: r.purpose, source: r.source_url || "", asked: r.id })}">검토 정보 보완</a>
                  <button class="btn sm" data-act="endpoint-request-close" data-id="${r.id}" data-name="${r.server_label}" data-endpoint="${r.hostname}">검토 종료</button></td></tr>`)}</tbody></table>` : empty("요청 없음"), { flush: true }) }] : []),
         ...(viewer.admin ? [] : [{ key: "approved", label: "사용 가능한 MCP", body: panel("사용 가능한 MCP", approvedMcpTable(servers, approvedMcpSearch), { flush: true,
           end: html`<a class="panel-shortcut" href="#/intake?t=new"><span>새 신청</span><span aria-hidden="true">↗</span></a>`,
@@ -2546,10 +2546,13 @@ const intakeSignals = (r) => {
 async function intakeDetail(id, tab) {
   const report = await api(`/api/mcp-requests/${id}/report`);
   const r = report.request, evidence = r.evidence || {};
+  const sourceApproved = Boolean(evidence.source_approval && evidence.source_approval.commit_sha === r.commit_sha);
+  const sourceOnly = r.intake_kind === "repository" && !evidence.local_run && r.status !== "APPROVED";
+  const reviewable = viewer.admin && (!r.own || viewer.solo_approval);
   const registered = r.registered_server_id ? (await gw("registry").catch(() => null))?.registrations?.[r.registered_server_id] : null;
   let out = null;
   let previewError = "";
-  if (viewer.admin && (!r.own || viewer.solo_approval) && APPROVABLE.includes(r.status) && (!r.registered_server_id || r.endpoint_reapproval_required)) {
+  if (reviewable && (!sourceOnly || sourceApproved) && APPROVABLE.includes(r.status) && (!r.registered_server_id || r.endpoint_reapproval_required)) {
     try {
       out = await api(`/api/mcp-requests/${id}/approval-preview`, { method: "POST", body: {} });
     } catch (error) {
@@ -2572,7 +2575,7 @@ async function intakeDetail(id, tab) {
   const view = [
     { key: "summary", label: "요약", body: html`<div class="stack">${out ? html`
       ${panel("신청 정보", intakeProposalView(out))}
-      ${panel("승인 범위", html`<form id="intake-approve" class="stack form" data-form="intake-approve">${intakeScopeFields(out)}</form>`)}
+      ${needLocal ? "" : panel("승인 범위", html`<form id="intake-approve" class="stack form" data-form="intake-approve">${intakeScopeFields(out)}</form>`)}
     ` : ""}${previewError ? html`<div class="note warn">${previewError}</div>` : ""}${by.summary?.body || (out ? "" : by.contract.body)}</div>` },
     ...(by.findings || by.secrets || by.sbom ? [{ key: "scan", label: "검사", body: part(["findings", "secrets", "sbom"]) }] : []),
     { key: "scope", label: "범위·권한", body: scopeBody },
@@ -2583,15 +2586,20 @@ async function intakeDetail(id, tab) {
   ];
   const body = page({
     head: head(r.display_name, { back: html`<a class="back" href="#/intake?t=review">← 도입 심사</a>`,
-      status: chip(...(INTAKE_STATUS[r.status] || ["", r.status])),
+      status: html`${chip(...(INTAKE_STATUS[r.status] || ["", r.status]))}${sourceApproved ? chip("allow", "소스 승인") : ""}`,
       actions: html`${r.intake_kind !== "remote-endpoint" && (["HOLD", "FAILED"].includes(r.status) || r.endpoint_reapproval_required) ? html`<button class="btn" data-act="intake-queue" data-id="${id}">재검증</button>` : ""}
-        ${needLocal ? html`<button class="btn" data-act="intake-local-run" data-id="${id}">엔드포인트 실행</button>` : ""}
+        ${reviewable && r.intake_kind === "repository" && !sourceApproved && r.status === "VALIDATED" ? html`
+          <button class="btn primary" data-act="intake-source-approve" data-id="${id}">소스 승인</button>
+          ${!out ? html`<button class="btn" data-act="intake-reject" data-id="${id}">거부</button>` : ""}` : ""}
+        ${reviewable && report.gate?.critical?.count && !report.gate.critical.covered && ["HOLD", "VALIDATED"].includes(r.status) ? html`
+          <button class="btn" data-act="intake-accept-risk" data-id="${id}" data-name="${r.display_name}">위험 수용</button>` : ""}
+        ${needLocal ? html`<button class="btn" data-act="intake-local-run" data-id="${id}">실행 등록 설정</button>` : ""}
         <button class="btn" data-act="save-json" data-name="intake-${id}-report.json">보고서 JSON 저장</button>` }),
     kpis: kpiStrip([["위험 등급", tier?.[1] || "—", tier?.[0] || ""],
       ["치명", evidence.critical ?? "—", "block"], ["높음", evidence.high ?? "—", "alert"],
       ["승인", approvalCount ?? "—"]]),
     tabs: view, active: view.some((t) => t.key === tab) ? tab : "summary" });
-  return { html: body, dock: out ? intakeDock(out, id) : "" };
+  return { html: body, dock: out && !needLocal ? intakeDock(out, id) : "" };
 }
 
 const plainLine = (s) => String(s || "").replace(/<[^>]*>/g, " ").replace(/[*_`#|>]+/g, " ").replace(/\s+/g, " ").trim();
@@ -3990,6 +3998,11 @@ const ACTIONS = {
   async "intake-local-run"(el) {
     const out = intakeApproval?.out;
     if (out && await askLocalRun(el.dataset.id, out.request, out.local_run_preset, out.local_run_status)) route();
+  },
+  async "intake-source-approve"(el) {
+    const r = await api(`/api/mcp-requests/${el.dataset.id}/source-approve`, { method: "POST" });
+    toast(r.message);
+    route();
   },
   async "intake-confirm"(el) {
     const ctx = intakeApproval, form = $("#intake-approve");

@@ -2092,4 +2092,8 @@ export const EN = {
   "케이스 전체의 증거 식별자": "Case-wide evidence identifier",
   "종결 메모 (선택)": "Closure note (optional)",
   "단독 승인": "Approve as sole operator",
+  "소스 승인": "Approve source",
+  "실행 등록 설정": "Configure runtime registration",
+  "검토 정보 보완": "Complete review details",
+  "검사한 커밋의 소스를 승인했습니다.": "Approved the scanned source commit.",
 };

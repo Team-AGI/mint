@@ -188,7 +188,7 @@ const bodies = {
     return { title: item.summary, body: c.html`${c.kv([["엔드포인트", r.hostname], ["사용자", r.owner_name], ["MCP", r.server_label],
       ["출처", r.source_url ? c.html`<code>${c.short(r.source_url, 80)}</code>` : ""], ["사용 목적", r.purpose], ["요청 시각", c.when(r.created_at)]])}
       <div class="row-actions inbox-decide"><button class="btn" type="button" data-act="endpoint-request-close" data-id="${r.id}" data-name="${r.server_label}" data-endpoint="${r.hostname}">검토 종료</button>
-      <a class="btn" href="#/intake?${draft}">신청서 작성</a></div>` };
+      <a class="btn" href="#/intake?${draft}">검토 정보 보완</a></div>` };
   },
   alert: async (c, item) => {
     const a = item.raw;
