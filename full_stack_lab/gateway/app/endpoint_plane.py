@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 from psycopg.types.json import Jsonb
 
 from . import db, intake_proposal, review, server_egress
+from .destination import registration_endpoint
 from .event_correlation import correlation_result
 
 AGENT_PROTOCOL = "1"
@@ -718,18 +719,48 @@ async def self_request(device: dict, server_label: str, source_url: str, purpose
         path = intake_proposal.github_repository_path(source_url)
     except ValueError:
         repository, path = "", ""
+    # GitHub 저장소가 아닌 https 주소는 원격 MCP 신청이다. PC 요청이 곧 신청이라 관리자가 다시 적지 않는다.
+    endpoint = ""
+    if not repository and source_url:
+        try:
+            endpoint = registration_endpoint(source_url)
+        except ValueError:
+            endpoint = ""
+    target = repository or endpoint
     request_id = uuid.uuid4()
     async with db.transaction() as connection:
         await connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"endpoint-request:{endpoint_id}:{server_label}",))
         existing = await db.fetch_one(
             """SELECT id FROM endpoint_mcp_requests WHERE endpoint_id=%s AND server_label=%s AND status='OPEN'""",
             (endpoint_id, server_label), connection=connection)
-        if existing and not (owner and repository):
+        if existing and not (owner and target):
             return {"id": str(existing["id"]), "status": "OPEN", "duplicate": True}
         if existing:
             request_id = existing["id"]
         intake_id = None
         intake_status, duplicate = "OPEN", False
+        if owner and endpoint:
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"endpoint-intake:{owner}:{endpoint}",))
+            recent = await db.fetch_one(
+                """SELECT id, status FROM mcp_intake_requests
+                   WHERE submitted_by=%s AND endpoint_url=%s AND intake_kind='remote-endpoint'
+                     AND status NOT IN ('REJECTED','FAILED') ORDER BY created_at DESC LIMIT 1""",
+                (owner, endpoint), connection=connection)
+            intake_id = recent["id"] if recent else uuid.uuid4()
+            intake_status = recent["status"] if recent else "HOLD"
+            duplicate = bool(recent)
+            if not recent:
+                # 도구를 고르지 않은 원격 신청은 서버가 내놓는 도구 전부를 승인 화면에 올린다(기본 통과).
+                await connection.execute(
+                    """INSERT INTO mcp_intake_requests
+                       (id,submitted_by,display_name,repository_url,repository_path,requested_transport,purpose,status,
+                        intake_kind,endpoint_url,risk_input,requested_tools,exit_terms)
+                       VALUES (%s,%s,%s,'','','streamable-http',%s,'HOLD','remote-endpoint',%s,%s,%s,%s)""",
+                    (intake_id, owner, server_label.strip()[:80] or urlsplit(endpoint).hostname, purpose.strip(), endpoint,
+                     Jsonb({"data_class": "nonimportant"}), Jsonb([]), Jsonb({})))
+                await review.record_event("user-consent", "recorded", "intake", intake_id, owner, applicant=owner,
+                                          reason=purpose.strip(), scope={"kind": "remote-endpoint", "transport": "streamable-http",
+                                          "target": endpoint, "endpoint_id": endpoint_id}, connection=connection)
         if owner and repository:
             await connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"endpoint-intake:{owner}:{repository}:{path}",))
             recent = await db.fetch_one(
