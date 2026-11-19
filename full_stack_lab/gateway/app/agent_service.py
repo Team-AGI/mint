@@ -2434,7 +2434,7 @@ async def pinned_image(image: str) -> str:
     return f"{name}@{digest}"
 
 
-async def signed_local_run(spec: dict, server_id: str) -> dict:
+async def signed_local_run(spec: dict, server_id: str, *, expires_at: str | None = None) -> dict:
     """승인 화면을 열 때마다 새 서명 세대로 서명한다. 같은 세대의 다른 매니페스트는 게이트웨이가 거부한다."""
     pem = os.getenv("LOCAL_MANIFEST_PRIVATE_KEY", "").replace("\\n", "\n").strip()
     if not pem:
@@ -2444,7 +2444,7 @@ async def signed_local_run(spec: dict, server_id: str) -> dict:
     manifest = {"server_id": server_id, "image": spec["image"], "command": spec["command"], "mounts": spec["mounts"],
                 "env": spec["env"], "reason": {"kind": spec["reason_kind"], "text": spec["reason_text"]},
                 "approval": {"generation": (previous["signature_generation"] + 1) if previous else 1,
-                             "expires_at": (datetime.now(UTC) + timedelta(days=365)).isoformat()}}
+                             "expires_at": expires_at or (datetime.now(UTC) + timedelta(days=365)).isoformat()}}
     if spec.get("source"):
         manifest["source"] = spec["source"]
     errors = local_jobs.manifest_errors(manifest, server_id)
@@ -2523,6 +2523,29 @@ async def set_local_run(request_id: UUID, request: LocalRunSpec, user: dict = De
 SOURCE_APPROVAL_DAYS = 90
 
 
+async def managed_source_plan(row: dict, decision: dict) -> dict:
+    spec = intake_proposal.managed_source_spec(row)
+    if not spec:
+        return {}
+    source = spec["source"]
+    from . import local_sources
+    if local_sources.source_errors(source):
+        return {}
+    risk_input = {"data_class": (row.get("risk_input") or {}).get("data_class", "nonimportant"),
+                  "personal_data": "general", "external_transfer": False, "permission": "r",
+                  "users": 1, "autonomy": "supervised"}
+    risk = risk_tier.assess(risk_input)
+    if risk["status"] != "ok" or risk_tier.APPROVAL[risk["tier"]]["approvers"] != 1:
+        return {}
+    approver = decision["actor"]
+    solo_mode = review.solo_mode_enabled()
+    risk.update(approvers=[approver], solo_mode=solo_mode,
+                solo_operator=solo_mode and await review.is_root(approver))
+    manifest = await signed_local_run(spec, intake_proposal.server_id(row), expires_at=decision["expires_at"])
+    return {"local_run": spec, "managed_source": manifest, "managed_source_pending": True,
+            "risk_assessment": risk, "managed_risk_input": risk_input}
+
+
 async def publish_source_approval(row: dict, actor: str) -> None:
     request_id = row["id"]
     evidence = row.get("evidence") or {}
@@ -2557,11 +2580,12 @@ async def publish_source_approval(row: dict, actor: str) -> None:
     if acceptance:
         decision["risk_acceptance_id"] = acceptance["id"]
     record["verification"] = {**(record.get("verification") or {}), **checked, "by": actor, "at": now.isoformat()}
+    plan = await managed_source_plan({**row, "provenance": record}, decision)
     updated = await review.transition(
         """UPDATE mcp_intake_requests SET status='APPROVED', evidence=%s, provenance=%s, internal_repo_url=%s,
                   reviewed_by=%s, reviewed_at=%s, updated_at=now()
            WHERE id=%s AND status='VALIDATED' AND commit_sha=%s AND evidence=%s AND provenance=%s RETURNING id""",
-        (Jsonb({**evidence, "source_approval": decision}), Jsonb(record), internal_url, decision["actor"], approved_at,
+        (Jsonb({**evidence, **plan, "source_approval": decision}), Jsonb(record), internal_url, decision["actor"], approved_at,
          request_id, row["commit_sha"], Jsonb(evidence), Jsonb(row.get("provenance") or {})),
         kind="intake-source-publish" if previous else "intake-source-approve",
         outcome="recorded" if previous else "approved", target_kind="intake", target_id=request_id,
@@ -2581,8 +2605,23 @@ async def publish_previous_source_approvals() -> None:
                     await publish_source_approval(row, "system")
             except Exception:
                 LOG.exception("Could not publish previously approved source for intake %s", row["id"])
+        repository, commit = intake_proposal.GHIDRA_SOURCE
+        for row in await db.fetch_all(
+                """SELECT * FROM mcp_intake_requests WHERE status='APPROVED' AND registered_server_id IS NULL
+                   AND repository_url=%s AND commit_sha=%s AND evidence ? 'source_approval'
+                   AND NOT (evidence ? 'managed_source')""", (repository, commit)):
+            evidence = row["evidence"]
+            decision = evidence["source_approval"]
+            if not decision.get("expires_at") or datetime.fromisoformat(decision["expires_at"]) <= datetime.now(UTC):
+                continue
+            plan = await managed_source_plan(row, decision)
+            if plan:
+                await db.execute(
+                    """UPDATE mcp_intake_requests SET evidence=%s, updated_at=now()
+                       WHERE id=%s AND status='APPROVED' AND registered_server_id IS NULL AND evidence=%s""",
+                    (Jsonb({**evidence, **plan}), row["id"], Jsonb(evidence)))
     except Exception:
-        LOG.exception("Could not load previously approved sources")
+        LOG.exception("Could not prepare previously approved sources")
 
 
 @app.post("/api/mcp-requests/{request_id}/source-approve")

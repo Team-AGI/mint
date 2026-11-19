@@ -2532,7 +2532,8 @@ async function intakeDetail(id, tab) {
     { key: "summary", label: "요약", body: html`<div class="stack">${out ? html`
       ${panel("신청 정보", intakeProposalView(out))}
       ${needLocal ? "" : panel("승인 범위", html`<form id="intake-approve" class="stack form" data-form="intake-approve">${intakeScopeFields(out)}</form>`)}
-    ` : ""}${previewError ? html`<div class="note warn">${previewError}</div>` : ""}${downloadable ? panel("소스 받기", html`<p>신청자는 CLIMINT의 <code>mint sources</code>에서 받을 수 있습니다.</p>`) : ""}
+    ` : ""}${previewError ? html`<div class="note warn">${previewError}</div>` : ""}${evidence.managed_source_pending ? panel("PC 연결", html`<p>승인한 MCP를 신청자의 PC에 연결하는 중입니다.</p>`) : ""}
+    ${downloadable ? panel("소스 받기", html`<p>신청자는 CLIMINT의 <code>mint sources</code>에서 받을 수 있습니다.</p>`) : ""}
     ${by.summary?.body || (out ? "" : by.contract.body)}</div>` },
     ...(by.findings || by.secrets || by.sbom ? [{ key: "scan", label: "검사", body: part(["findings", "secrets", "sbom"]) }] : []),
     { key: "scope", label: "범위·권한", body: scopeBody },

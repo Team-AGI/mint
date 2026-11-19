@@ -176,3 +176,23 @@ def _official(row: dict) -> bool:
 def local_run_status(row: dict) -> str:
     """제안을 못 하는 공식 이미지의 이유를 짧은 상태 문구로. 제안이 있거나 모르는 경로면 빈 문자열."""
     return ROOT_ONLY_STATUS if _official(row) and (row.get("repository_path") or "").strip("/") in ROOT_ONLY_IMAGES else ""
+
+
+# MINT can provision a PC application when its source, launch profile and safe tool set are known.
+# Unknown commits never inherit a profile from the repository name alone.
+GHIDRA_SOURCE = ("https://github.com/bethington/ghidra-mcp", "5185dde30920e9967ec3f4a28f9561783e859e69")
+GHIDRA_TOOLS = {"find_functions", "get_entry_points", "get_metadata"}
+
+
+def managed_source_spec(row: dict) -> dict | None:
+    if (row.get("repository_url"), row.get("commit_sha")) != GHIDRA_SOURCE or row.get("repository_path"):
+        return None
+    generated = (row.get("evidence") or {}).get("endpoint_source") or {}
+    if generated.get("commit") != row["commit_sha"] or not generated.get("locks"):
+        return None
+    return {
+        "source": {**generated, "entrypoint": "python/bridge_mcp_ghidra/__main__.py",
+                   "sha256": ((row.get("provenance") or {}).get("artifact") or {}).get("sha256")},
+        "image": "", "command": ["--default-groups", "listing,program"], "mounts": [], "env": {},
+        "reason_kind": "local_tool", "reason_text": "신청자 PC에서 열린 Ghidra 프로젝트 정보 조회",
+    }

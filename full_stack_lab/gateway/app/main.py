@@ -32,7 +32,7 @@ from .core import (
     supply_chain_coverage,
     monitor_summary,
     refresh_all_catalogs,
-    catalog_watch,
+    catalog_watch, managed_source_watch,
     reject_request,
     set_enforcement_mode,
     verify_audit_chain,
@@ -297,6 +297,7 @@ class AddonResult(StrictModel):
 async def lifespan(_: FastAPI):
     await bootstrap()
     watcher = asyncio.create_task(catalog_watch())
+    managed_sources = asyncio.create_task(managed_source_watch())
     pool_watcher = asyncio.create_task(upstream.maintain_pool())
     operations = asyncio.create_task(ops_response.watch(OPA_URL))
     tombstones = asyncio.create_task(disposal.watch())
@@ -307,11 +308,12 @@ async def lifespan(_: FastAPI):
             yield
     finally:
         watcher.cancel()
+        managed_sources.cancel()
         pool_watcher.cancel()
         operations.cancel()
         tombstones.cancel()
         synchronization.cancel()
-        await asyncio.gather(watcher, pool_watcher, operations, tombstones, synchronization, return_exceptions=True)
+        await asyncio.gather(watcher, managed_sources, pool_watcher, operations, tombstones, synchronization, return_exceptions=True)
         await upstream.close_pool()
         await db.close()
 

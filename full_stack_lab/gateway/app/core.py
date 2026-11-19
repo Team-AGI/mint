@@ -643,6 +643,11 @@ async def register_server(request: dict, actor: str) -> dict:
     if not intake or intake["status"] != "APPROVED" or not intake.get("reviewed_by"):
         raise ValueError("승인된 도입 신청만 등록할 수 있습니다.")
     evidence = intake.get("evidence") or {}
+    managed_source = evidence.get("managed_source")
+    if managed_source and (request.get("local") != managed_source or not request["tools"]
+                           or set(request["tools"]) - intake_proposal.GHIDRA_TOOLS
+                           or any(action != "r" for action in request["tools"].values())):
+        raise ValueError("검증된 관리형 소스 실행 범위와 다릅니다.")
     approved_risk = evidence.get("risk_assessment") or {}
     recorded = approved_risk.get("approvers") or []
     forced = (approved_risk.get("solo_operator") is True and review.solo_mode_enabled()
@@ -790,6 +795,10 @@ async def register_server(request: dict, actor: str) -> dict:
             raise ValueError("승인 기한이 지났습니다. 새 도입 신청이 필요합니다.")
     if remote_review:
         approval_until = datetime.fromisoformat(remote_review["valid_until"])
+    if managed_source:
+        approval_until = min(approval_until, datetime.fromisoformat(evidence["source_approval"]["expires_at"]))
+        if approval_until <= datetime.now(UTC):
+            raise ValueError("도입 승인 사용 기한이 지났습니다.")
     valid_until = (min(approval_until, supplier_assurance.support_expiry(assurance["support_end"]))
                    if assurance.get("support_end") else approval_until).isoformat(timespec="seconds")
     spec = {
@@ -1143,6 +1152,70 @@ async def apply_risk_grace(now: datetime | None = None) -> list[dict]:
             registry.save_runtime(doc)
             await registry.sync()
     return capped
+
+
+async def provision_managed_sources() -> None:
+    """Map an existing intake decision onto a supported managed execution profile."""
+    repository, commit = intake_proposal.GHIDRA_SOURCE
+    rows = await db.fetch_all(
+        """SELECT * FROM mcp_intake_requests WHERE status='APPROVED' AND registered_server_id IS NULL
+           AND repository_url=%s AND commit_sha=%s AND evidence->>'managed_source_pending'='true'
+           ORDER BY reviewed_at""", (repository, commit))
+    for row in rows:
+        try:
+            evidence = row["evidence"]
+            grant = evidence["source_approval"]
+            local = evidence["managed_source"]
+            sid = intake_proposal.server_id(row)
+            plan = intake_proposal.managed_source_spec(row)
+            if (not plan or evidence["local_run"] != plan or grant["actor"] != row["reviewed_by"]
+                    or grant["commit_sha"] != row["commit_sha"]
+                    or datetime.fromisoformat(grant["expires_at"]) <= datetime.now(UTC)):
+                continue
+            gate = await review.intake_gate(row, verified=True)
+            if gate["blockers"]:
+                raise ValueError(" / ".join(item["message"] for item in gate["blockers"]))
+            endpoint = local_jobs.PREFIX + sid
+            found = await discover_for_registration(endpoint, local, str(row["id"]))
+            tools = [t for t in found["tools"] if t["name"] in intake_proposal.GHIDRA_TOOLS]
+            if not tools or any(t["warnings"] for t in tools):
+                raise ValueError("검증된 로컬 조회 도구 계약이 없습니다.")
+            risk_input = evidence["managed_risk_input"]
+            risks = risk_tier.assess(risk_input)
+            if risks["input_sha256"] != evidence["risk_assessment"]["input_sha256"]:
+                raise ValueError("자동 배포의 영향 평가가 변경되었습니다.")
+            if not await db.fetch_one(
+                    """UPDATE mcp_intake_requests SET risk_input=%s WHERE id=%s AND status='APPROVED'
+                       AND registered_server_id IS NULL AND evidence=%s RETURNING id""",
+                    (Jsonb(risk_input), row["id"], Jsonb(evidence))):
+                continue
+            reviews = intake_proposal.tool_reviews({**row, "data_class": risk_input["data_class"]}, tools)
+            for item in reviews.values():
+                item["consent"] = False
+            await register_server({
+                "server_id": sid, "endpoint": endpoint, "intake_id": str(row["id"]), "local": local,
+                "catalog_hash": found["catalog_hash"], "tools": {tool["name"]: "r" for tool in tools},
+                "tool_reviews": reviews, "data_class": risk_input["data_class"], "valid_days": 90,
+                "display_name": row["display_name"], "source_url": row["repository_url"], "commit_sha": row["commit_sha"],
+                "supplier": "github.com", "purpose": row["purpose"],
+            }, row["reviewed_by"])
+            linked = await db.fetch_one(
+                """UPDATE mcp_intake_requests SET registered_server_id=%s, evidence=evidence-'managed_source_pending',
+                          updated_at=now() WHERE id=%s AND status='APPROVED' AND registered_server_id IS NULL
+                          AND evidence=%s RETURNING id""", (sid, row["id"], Jsonb(evidence)))
+            if not linked:
+                await deregister_server(sid, "system", "도입 승인이 자동 등록 도중 변경됨")
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Managed source %s is awaiting provisioning: %s", row["id"], _root_cause(exc))
+
+
+async def managed_source_watch() -> None:
+    while True:
+        try:
+            await provision_managed_sources()
+        except Exception:
+            logging.getLogger(__name__).exception("Managed source provisioning failed")
+        await asyncio.sleep(20)
 
 
 async def catalog_watch() -> None:
