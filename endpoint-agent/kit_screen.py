@@ -10,11 +10,13 @@ import sys
 import threading
 import time
 import unicodedata
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
 ENTER = "\x1b[?1049h\x1b[?25l"
 LEAVE = "\x1b[0m\x1b[?25h\x1b[?1049l"
+CLEAR = "\x1b[H\x1b[2J"
 STATES = {"active": "활성", "pending": "활성화 대기", "quarantined": "격리됨",
           "revoked": "등록 해제됨", "removed": "제거됨", "unknown": "확인 필요"}
 
@@ -54,6 +56,7 @@ TEXT_EN = {
     "최근 보고": "Last report", "최근 엔드포인트 차단": "Recent endpoint blocks",
     "게이트웨이 MCP 목록": "Gateway MCP list", "MCP 목록": "MCP list", "관리 설정": "Managed settings", "엔드포인트 · MCP 연결 관리": "Endpoint · MCP connection management",
     "연결": "Connection", "점검": "Checks", "닫기": "Close", "창을 넓혀 주세요": "Widen the window", "로그인 필요": "Sign-in needed", "게이트웨이 응답 정상": "Gateway answers",
+    "받을 수 있는 소스": "Downloadable sources", "소스 받기": "Download source",
     "설치 단계": "Installation steps", "설치 확인": "Installation checks", "설치 중": "Installing",
     "설치 완료": "Installed", "설치 실패": "Installation failed", "차단 발생": "Blocked",
     "관리 설정 적용": "Managed settings applied", "서버 연결": "Server connection", "서버": "Servers",
@@ -289,7 +292,7 @@ def source_menu(address):
         show("승인된 MCP", [notice_line("목록을 받지 못했습니다", "err", inner, profile, g)])
         return True
     if not servers:
-        show("승인된 MCP", [Line(paint("—", "dim", profile), 1)])
+        show("승인된 MCP", [notice_line("승인된 MCP가 없습니다", "dim", inner, profile, g)])
         return True
     rows = []
     for i, server in enumerate(servers, 1):
@@ -441,7 +444,7 @@ def _ago(seconds, language="ko"):
 
 
 def layout(summary, rows=(), cells=(), next_line="", columns=80, lines=30, now=None, stale=180, language="ko",
-           profile="none", g=UTF, keys=KEY_ITEMS, spin=0, tabs=None):
+           profile="none", g=UTF, keys=KEY_ITEMS, spin=0, tabs=None, approved_sources=None):
     """화면 한 장을 Line 목록으로 만든다. 표시 높이를 넘으면 덜 중요한 카드부터 줄인다."""
     now = time.time() if now is None else now
     t = lambda text: translate(text, language)
@@ -512,8 +515,15 @@ def layout(summary, rows=(), cells=(), next_line="", columns=80, lines=30, now=N
     count = summary.get("servers")
     count = len(count) if isinstance(count, list) else count if type(count) is int else len(names) if names else None
     local = summary.get("local") if isinstance(summary.get("local"), dict) else {}
-    lw = lab("승인 MCP 서버", *(("로컬 MCP 준비", "직원 문서 폴더") if local.get("total") else ()))
+    lw = lab("승인 MCP 서버", *(("로컬 MCP 준비", "직원 문서 폴더") if local.get("total") else ()),
+             *(("받을 수 있는 소스",) if approved_sources is not None else ()))
     servers = [kv(t("승인 MCP 서버"), t(f"{count}개") if type(count) is int else "—", inner, profile, g, lw)]
+    if approved_sources is not None:
+        sources = [clean(s.get("display_name") or s["server_id"]) for s in approved_sources if s.get("source_available")]
+        listing = t(f"{len(sources)}개")
+        if sources:
+            listing += " · " + ", ".join(sources)
+        servers.append(kv(t("받을 수 있는 소스"), listing, inner, profile, g, lw, wrap=True))
     if local.get("total"):
         ready = f"{local.get('ready', 0)}/{local['total']}"
         servers.append(kv(t("로컬 MCP 준비"), ready + (" · " + t(clean(local["note"])) if local.get("note") else ""), inner,
@@ -733,7 +743,7 @@ def page_keys(screen, check, sources):
     keys = [("q", "종료"), ("1-4", "화면")]
     if screen.page == 0:
         keys += [("c", "지금 점검")] if check else []
-    if screen.page == 1 and sources:
+    if screen.page in (0, 1) and sources:
         keys.append(("s", "소스 받기"))
     if screen.page == 2:
         keys += [("Esc", "목록")] if screen.detail is not None else [("↑↓", "선택"), ("Enter", "상세")]
@@ -811,7 +821,7 @@ class Screen:
         self.summary, self.window = {}, None
         self.keys, self.spin = (), 0  # 키를 실제로 받는 화면(live·finish)만 안내를 단다
         # The local screen's pages (mint ui) in the terminal; page 0 is the status cards, the rest need the console data.
-        self.page, self.data, self.sources, self.sel, self.detail, self.notice, self.access = 0, None, [], 0, None, "", None
+        self.page, self.data, self.sources, self.sel, self.detail, self.notice, self.access = 0, None, None, 0, None, "", None
         self._restore_vt = self._terminal = None
         self._handlers = {}
         self._size = None
@@ -875,6 +885,24 @@ class Screen:
 
     pause = stop
 
+    @contextmanager
+    def inline_prompt(self):
+        """Use line input without writing the menu to the shell's scrollback."""
+        if self._terminal is not None:
+            import termios
+            import tty
+            termios.tcsetattr(self.input.fileno(), termios.TCSADRAIN, self._terminal)
+        try:
+            self.output.write(CLEAR + "\x1b[?25h")
+            self.output.flush()
+            yield
+        finally:
+            if self.window is not None:
+                if self._terminal is not None:
+                    tty.setcbreak(self.input.fileno())
+                self.output.write("\x1b[?25l")
+                self.draw()
+
     def lines(self, height=None):
         size = shutil.get_terminal_size((80, 30))
         profile = color_profile(self.output)
@@ -886,7 +914,8 @@ class Screen:
         tabs = tab_bar(self.page, profile, total, self.data)
         if self.page == 0:
             return layout(self.summary, self.rows, self.cells, self.next, size.columns, lines, language=self.language,
-                          profile=profile, g=glyphs_for(self.output), keys=self.keys, spin=self.spin, tabs=tabs)
+                          profile=profile, g=glyphs_for(self.output), keys=self.keys, spin=self.spin, tabs=tabs,
+                          approved_sources=self.sources)
         return console_page(self, size.columns, lines, profile, glyphs_for(self.output), tabs)
 
     def text(self, height=None):
@@ -905,7 +934,7 @@ class Screen:
         except Exception:
             # 표시 자체가 실패해도 키 안내는 남겨 빠져나갈 수 있게 한다.
             body = "\r\n" + translate("화면을 그리지 못했습니다", self.language) + "\r\n" + translate(KEYS, self.language)
-        self.output.write("\x1b[H\x1b[2J" + body)
+        self.output.write(CLEAR + body)
         self.output.flush()
 
     def resized(self):
@@ -1011,10 +1040,13 @@ def live(read, check=None, screen=None, sources=None, address=None):
         fetched[0] = time.monotonic()
         try:
             screen.data = screen.access.receive(address, {"action": "self"})
-            screen.sources = screen.access.receive(address, {"action": "list"})
         except (OSError, ValueError, KeyError, TypeError):
             screen.data = screen.data if isinstance(screen.data, dict) else {}
-            screen.notice = "엔드포인트 서비스 연결 실패"
+        try:
+            screen.sources = screen.access.receive(address, {"action": "list"})
+        except (OSError, ValueError, KeyError, TypeError):
+            screen.sources = None
+            screen.notice = "목록을 받지 못했습니다"
 
     def measure(summary):
         try:
@@ -1089,14 +1121,12 @@ def live(read, check=None, screen=None, sources=None, address=None):
             if key in ("q", "\x1b"):
                 break
             if key == "s" and sources:
-                screen.pause()
                 try:
-                    if sources():
-                        input("\n  " + translate("Enter 돌아가기", screen.language) + " ")
+                    with screen.inline_prompt():
+                        if sources():
+                            input("\n  " + translate("Enter 돌아가기", screen.language) + " ")
                 except (EOFError, KeyboardInterrupt):
                     pass
-                finally:
-                    screen.resume()
             if key == "c" and check and not checking:
                 checking = True
                 screen.cells = [("하네스 응답", "진행 중"), ("게이트웨이 MCP 목록", "진행 중")]
