@@ -2258,10 +2258,10 @@ function approvedMcpAddress(server) {
 
 function showAvailableMcp(server) {
   const address = approvedMcpAddress(server), tools = server.tools || [];
-  const execution = { remote: "원격", pc: "엔드포인트", reapproval: "엔드포인트 실행으로 재승인 필요" };
+  const execution = { remote: "원격", pc: "엔드포인트", reapproval: "엔드포인트 실행으로 재승인 필요", source: "소스 다운로드" };
   openDrawer(server.display_name || server.server_id, html`<div class="row-actions">${address ? html`<button class="btn primary" data-act="available-mcp-copy" data-id="${server.server_id}">MCP 주소 복사</button>` : ""}
     ${viewer.kit ? html`<button class="btn" data-act="pc-kit">PC 연결 설정</button>` : ""}</div>`, [
-    { key: "usage", label: "이용 방법", body: html`${kv([["사용 목적", server.purpose || "—"], ["연결 경로", "게이트웨이"],
+    { key: "usage", label: "이용 방법", body: html`${kv([["사용 목적", server.purpose || "—"], ["연결 경로", server.execution === "source" ? "CLIMINT · mint sources" : "게이트웨이"],
       ["MCP 주소", address ? html`<code>${address}</code>` : "—"], ["실행 방식", execution[server.execution] || "—"], ["사용 기한", when(server.valid_until)]])}` },
     { key: "tools", label: "제공 도구", n: tools.length, body: tools.length ? html`<table class="data"><thead><tr><th>도구</th><th>허용 행위</th><th>사용 목적</th><th>범위 심사</th></tr></thead><tbody>
       ${tools.map((tool) => html`<tr><td><code>${tool.name}</code></td><td>${ACTION[tool.action] || "—"}</td><td>${tool.purpose || "—"}</td><td>${tool.scope_reviewed ? "심사 완료" : "범위 미심사"}</td></tr>`)}</tbody></table>` : empty("제공 도구 없음") },
@@ -2489,52 +2489,6 @@ function intakeDock(out, id) {
     <button class="btn" type="button" data-act="intake-confirm" data-id="${id}" ${p.blockers.length ? raw("disabled") : ""}>승인</button></div>`;
 }
 
-const LOCAL_REASON = { local_file: "로컬 파일", local_tool: "로컬 도구", device: "장치" };
-
-async function askLocalRun(id, request, preset = {}, status = "") {
-  const generated = request.evidence?.endpoint_source;
-  const cur = request.evidence?.local_run || (generated ? { source: generated } : preset);
-  const process = Boolean(cur.source);
-  const fd = await ask({ title: `엔드포인트 실행 · ${request.display_name}`, confirm: "확인", fields: html`
-    ${status ? chip("alert", status) : ""}
-    ${field.select("execution", "실행 방식", { process: "프로세스", container: "컨테이너" }, process ? "process" : "container")}
-    <div class="stack" data-intake-execution="process" ${process ? "" : raw("hidden")}>
-      ${field.select("source_runtime", "런타임", { python: "Python", node: "Node.js" }, cur.source?.runtime || "python")}
-      ${field.text("source_entrypoint", "진입 파일", 'maxlength="256"', cur.source?.entrypoint || "")}
-      ${!generated ? html`${field.text("source_lock", "의존성 잠금 파일", 'maxlength="256"', cur.source?.lock || "package-lock.json")}
-        ${field.text("source_lock_hash", "의존성 잠금 해시", 'maxlength="64"', cur.source?.lock_sha256 || "")}` : ""}
-    </div>
-    <div data-intake-execution="container" ${process ? raw("hidden") : ""}>${field.text("image", "이미지", 'maxlength="300"',
-      cur.image || (request.repository_path && !status ? `mcp/${request.repository_path.split("/").pop()}` : ""))}</div>
-    ${field.select("reason_kind", "실행 위치 근거", LOCAL_REASON, cur.reason_kind || "local_file")}
-    ${field.text("reason_text", "근거 설명", 'required minlength="10" maxlength="500"', cur.reason_text || "")}
-    <details class="intake-options"><summary>실행 인자·폴더·환경 변수</summary><div class="stack">
-      ${field.text("command", "실행 인자", 'maxlength="2000" placeholder="/workspace/폴더이름"', (cur.command || []).join(" "))}
-      ${field.text("mounts", "폴더 (홈 기준 → /workspace/경로, 쉼표 구분, 경로:ro|rw)", 'maxlength="1000" placeholder="폴더이름:ro"',
-        (cur.mounts || []).map((m) => `${m.path}:${m.mode}`).join(", "))}
-      ${field.text("env", "환경 변수 (이름=값, 쉼표 구분)", 'maxlength="2000" placeholder="이름=값"',
-        Object.entries(cur.env || {}).map(([k, v]) => `${k}=${v}`).join(", "))}
-    </div></details>` });
-  if (!fd) return false;
-  const mounts = String(fd.get("mounts") || "").split(",").map((v) => v.trim()).filter(Boolean).map((v) => {
-    const [path, mode = "ro"] = v.split(":");
-    return { path: path.trim().replace(/^~\//, ""), mode: mode.trim() || "ro" };
-  });
-  const env = Object.fromEntries(String(fd.get("env") || "").split(",").map((v) => v.trim()).filter(Boolean).map((v) => {
-    const at = v.indexOf("=");
-    return at < 0 ? [v, ""] : [v.slice(0, at).trim(), v.slice(at + 1).trim()];
-  }));
-  const result = await api(`/api/mcp-requests/${id}/local-run`, { method: "POST", body: {
-    image: fd.get("execution") === "process" ? "" : String(fd.get("image")).trim(),
-    ...(fd.get("execution") === "process" ? { source: { commit: request.commit_sha,
-      sha256: request.provenance?.artifact?.sha256, runtime: fd.get("source_runtime"),
-      entrypoint: String(fd.get("source_entrypoint")).trim(), lock: generated?.lock || String(fd.get("source_lock") || "").trim(),
-      lock_sha256: generated?.lock_sha256 || String(fd.get("source_lock_hash") || "").trim() } } : {}), command: String(fd.get("command") || "").trim().split(/\s+/).filter(Boolean),
-    mounts, env, reason_kind: fd.get("reason_kind"), reason_text: String(fd.get("reason_text")).trim() } });
-  toast(result.message);
-  return true;
-}
-
 const APPROVABLE = ["HOLD", "VALIDATED", "REMOTE_REVIEWED", "APPROVED"];
 let intakeApproval = null;
 const intakeSignals = (r) => {
@@ -2547,12 +2501,14 @@ async function intakeDetail(id, tab) {
   const report = await api(`/api/mcp-requests/${id}/report`);
   const r = report.request, evidence = r.evidence || {};
   const sourceApproved = Boolean(evidence.source_approval && evidence.source_approval.commit_sha === r.commit_sha);
-  const sourceOnly = r.intake_kind === "repository" && !evidence.local_run && r.status !== "APPROVED";
+  const sourceRelease = r.intake_kind === "repository" && !r.registered_server_id && (!evidence.local_run || sourceApproved);
+  const published = sourceRelease && sourceApproved && r.status === "APPROVED";
+  const downloadable = published && Date.parse(evidence.source_approval.expires_at) > Date.now();
   const reviewable = viewer.admin && (!r.own || viewer.solo_approval);
   const registered = r.registered_server_id ? (await gw("registry").catch(() => null))?.registrations?.[r.registered_server_id] : null;
   let out = null;
   let previewError = "";
-  if (reviewable && (!sourceOnly || sourceApproved) && APPROVABLE.includes(r.status) && (!r.registered_server_id || r.endpoint_reapproval_required)) {
+  if (reviewable && !sourceRelease && APPROVABLE.includes(r.status) && (!r.registered_server_id || r.endpoint_reapproval_required)) {
     try {
       out = await api(`/api/mcp-requests/${id}/approval-preview`, { method: "POST", body: {} });
     } catch (error) {
@@ -2576,7 +2532,8 @@ async function intakeDetail(id, tab) {
     { key: "summary", label: "요약", body: html`<div class="stack">${out ? html`
       ${panel("신청 정보", intakeProposalView(out))}
       ${needLocal ? "" : panel("승인 범위", html`<form id="intake-approve" class="stack form" data-form="intake-approve">${intakeScopeFields(out)}</form>`)}
-    ` : ""}${previewError ? html`<div class="note warn">${previewError}</div>` : ""}${by.summary?.body || (out ? "" : by.contract.body)}</div>` },
+    ` : ""}${previewError ? html`<div class="note warn">${previewError}</div>` : ""}${downloadable ? panel("소스 받기", html`<p>신청자는 CLIMINT의 <code>mint sources</code>에서 받을 수 있습니다.</p>`) : ""}
+    ${by.summary?.body || (out ? "" : by.contract.body)}</div>` },
     ...(by.findings || by.secrets || by.sbom ? [{ key: "scan", label: "검사", body: part(["findings", "secrets", "sbom"]) }] : []),
     { key: "scope", label: "범위·권한", body: scopeBody },
     { key: "risk", label: "위험·영향평가", body: by.risk.body },
@@ -2586,14 +2543,14 @@ async function intakeDetail(id, tab) {
   ];
   const body = page({
     head: head(r.display_name, { back: html`<a class="back" href="#/intake?t=review">← 도입 심사</a>`,
-      status: html`${chip(...(INTAKE_STATUS[r.status] || ["", r.status]))}${sourceApproved ? chip("allow", "소스 승인") : ""}`,
+      status: html`${chip(...(INTAKE_STATUS[r.status] || ["", r.status]))}${downloadable ? chip("allow", "CLIMINT 다운로드 가능") : published ? chip("alert", "사용 기한 만료") : ""}`,
       actions: html`${r.intake_kind !== "remote-endpoint" && (["HOLD", "FAILED"].includes(r.status) || r.endpoint_reapproval_required) ? html`<button class="btn" data-act="intake-queue" data-id="${id}">재검증</button>` : ""}
-        ${reviewable && r.intake_kind === "repository" && !sourceApproved && r.status === "VALIDATED" ? html`
-          <button class="btn primary" data-act="intake-source-approve" data-id="${id}">소스 승인</button>
-          ${!out ? html`<button class="btn" data-act="intake-reject" data-id="${id}">거부</button>` : ""}` : ""}
+        ${reviewable && sourceRelease && r.status === "VALIDATED" ? html`
+          <button class="btn primary" data-act="intake-source-approve" data-id="${id}">${sourceApproved ? "게시 재시도" : "승인"}</button>
+          <button class="btn" data-act="intake-reject" data-id="${id}">거부</button>` : ""}
+        ${viewer.admin && published ? html`<button class="btn" data-act="intake-reject" data-id="${id}" data-withdraw="1">승인 취소</button>` : ""}
         ${reviewable && report.gate?.critical?.count && !report.gate.critical.covered && ["HOLD", "VALIDATED"].includes(r.status) ? html`
           <button class="btn" data-act="intake-accept-risk" data-id="${id}" data-name="${r.display_name}">위험 수용</button>` : ""}
-        ${needLocal ? html`<button class="btn" data-act="intake-local-run" data-id="${id}">실행 등록 설정</button>` : ""}
         <button class="btn" data-act="save-json" data-name="intake-${id}-report.json">보고서 JSON 저장</button>` }),
     kpis: kpiStrip([["위험 등급", tier?.[1] || "—", tier?.[0] || ""],
       ["치명", evidence.critical ?? "—", "block"], ["높음", evidence.high ?? "—", "alert"],
@@ -3995,10 +3952,6 @@ const ACTIONS = {
     toast(r.message); reload();
   },
   "intake-one-click": (el) => { location.hash = `#/intake/${el.dataset.id}`; },
-  async "intake-local-run"(el) {
-    const out = intakeApproval?.out;
-    if (out && await askLocalRun(el.dataset.id, out.request, out.local_run_preset, out.local_run_status)) route();
-  },
   async "intake-source-approve"(el) {
     const r = await api(`/api/mcp-requests/${el.dataset.id}/source-approve`, { method: "POST" });
     toast(r.message);
@@ -4131,10 +4084,11 @@ const ACTIONS = {
     toast("기록했습니다."); closeDrawer(); reload();
   },
   async "intake-reject"(el) {
-    const fd = await ask({ title: "도입 신청 거부", fields: field.text("note", "사유", 'required minlength="2" maxlength="500"'), confirm: "거부", danger: true });
+    const label = el.dataset.withdraw ? "승인 취소" : "거부";
+    const fd = await ask({ title: label, fields: field.text("note", "사유", 'required minlength="2" maxlength="500"'), confirm: label, danger: true });
     if (!fd) return;
     await api(`/api/mcp-requests/${el.dataset.id}/reject`, { method: "POST", body: { note: fd.get("note") } });
-    toast("거부했습니다."); refreshBadges();
+    toast(el.dataset.withdraw ? "승인을 취소했습니다." : "거부했습니다."); refreshBadges();
     if (current.arg) location.hash = "#/intake?t=review"; else reload();
   },
   "organization-policy"(el) {
@@ -4496,11 +4450,6 @@ document.addEventListener("change", (event) => {
     if (subject) {
       subject.hidden = Boolean(event.target.value);
       subject.querySelector("input").disabled = subject.hidden;
-    }
-  }
-  if (event.target.matches('#dialog-form [name="execution"]')) {
-    for (const section of event.target.form.querySelectorAll("[data-intake-execution]")) {
-      section.hidden = section.dataset.intakeExecution !== event.target.value;
     }
   }
   if (event.target.matches('[data-form="intake"] [name="data_class"]')) {

@@ -2093,7 +2093,10 @@ export const EN = {
   "종결 메모 (선택)": "Closure note (optional)",
   "단독 승인": "Approve as sole operator",
   "소스 승인": "Approve source",
-  "실행 등록 설정": "Configure runtime registration",
+  "CLIMINT 다운로드 가능": "Available in CLIMINT",
+  "게시 재시도": "Retry publishing",
+  "승인했습니다. 신청자가 CLIMINT에서 소스를 받을 수 있습니다.": "Approved. The requester can download the source in CLIMINT.",
+  "승인을 취소했습니다.": "Approval withdrawn.",
   "검토 정보 보완": "Complete review details",
   "검사한 커밋의 소스를 승인했습니다.": "Approved the scanned source commit.",
 };

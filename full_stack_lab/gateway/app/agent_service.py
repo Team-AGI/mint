@@ -109,9 +109,12 @@ async def lifespan(_: FastAPI):
         LOG.exception("root solo mode setting was not recorded in approval_events")
     if os.getenv("MCP_FIELD_MODE") == "1":
         await reconcile_gitea_accounts()
+    publish_pending = asyncio.create_task(publish_previous_source_approvals())
     try:
         yield
     finally:
+        publish_pending.cancel()
+        await asyncio.gather(publish_pending, return_exceptions=True)
         await db.close()
 
 
@@ -2148,6 +2151,31 @@ async def approved_mcp_rows(user: dict, server_id: str | None = None) -> list[di
         approved.append({**row, "valid_until": until.isoformat(), "tools": approved_tools,
                          "execution": "remote" if remote else "pc" if spec.get("local") else
                                       "reapproval"})
+    # A source grant has its own audience and expiry even before a machine can run it.
+    # Never fall back to it for a registered MCP whose execution approval was withdrawn.
+    sources = await db.fetch_all(
+        """SELECT r.id AS intake_id, r.display_name, r.purpose, r.repository_url, r.endpoint_url,
+                  r.intake_kind, r.commit_sha, r.internal_repo_url, r.repository_path, r.evidence->'source_approval' AS grant
+             FROM mcp_intake_requests r
+             JOIN principals p ON p.token=%s AND p.status='active'
+            WHERE r.intake_kind='repository' AND r.status='APPROVED'
+              AND r.registered_server_id IS NULL AND r.internal_repo_url IS NOT NULL
+              AND r.evidence->'source_approval'->>'commit_sha'=r.commit_sha
+              AND r.provenance->'verification'->>'match'='true'
+              AND r.provenance->'verification'->>'sha256'=r.evidence->'source_approval'->>'artifact_sha256'
+              AND (r.submitted_by=p.token OR (%s AND p.role='admin'))
+              AND (NOT ((r.evidence->'source_approval') ? 'risk_acceptance_id') OR EXISTS (
+                    SELECT 1 FROM accepted_risks a WHERE a.intake_id=r.id AND a.commit_sha=r.commit_sha
+                      AND a.id::text=r.evidence->'source_approval'->>'risk_acceptance_id'
+                      AND a.revoked_at IS NULL AND a.expires_at>now()))
+            ORDER BY r.display_name, r.id""", (user["principal"], "admin" in user["roles"]))
+    for row in sources:
+        sid = intake_proposal.server_id({**row, "id": row["intake_id"]})
+        if server_id is not None and sid != server_id:
+            continue
+        until = row["grant"].get("expires_at")
+        if until and datetime.fromisoformat(until) > datetime.now(UTC):
+            approved.append({**row, "server_id": sid, "valid_until": until, "tools": [], "execution": "source"})
     return approved
 
 
@@ -2175,7 +2203,8 @@ async def list_approved_mcp(user: dict = Depends(caller)):
                 pass
         servers.append({key: row[key] for key in ("server_id", "display_name", "commit_sha", "valid_until", "execution")}
                        | {"source_url": row["endpoint_url"] if row["intake_kind"] == "remote-endpoint" else row["repository_url"],
-                          "connection_url": f"/mcp/{row['server_id']}/", "source_available": source_available,
+                          "connection_url": None if row["execution"] == "source" else f"/mcp/{row['server_id']}/",
+                          "source_available": source_available,
                           "purpose": row.get("purpose") or "", "tools": row["tools"]})
     return {"servers": servers}
 
@@ -2491,11 +2520,13 @@ async def set_local_run(request_id: UUID, request: LocalRunSpec, user: dict = De
     return {"local_run": spec, "message": "엔드포인트 실행"}
 
 
-@app.post("/api/mcp-requests/{request_id}/source-approve")
-async def approve_intake_source(request_id: UUID, user: dict = Depends(admin_caller)):
-    row = await approval_row(request_id, user)
-    if row["intake_kind"] != "repository" or row["status"] != "VALIDATED" or not row.get("commit_sha"):
-        raise HTTPException(409, "저장소 검사가 끝난 신청만 소스를 승인할 수 있습니다.")
+SOURCE_APPROVAL_DAYS = 90
+
+
+async def publish_source_approval(row: dict, actor: str) -> None:
+    request_id = row["id"]
+    evidence = row.get("evidence") or {}
+    previous = evidence.get("source_approval") or {}
     record, attestation_blocker = await collect_proposal_provenance(row, row.get("provenance") or {})
     gate = await review.intake_gate({**row, "provenance": record})
     blockers = [item["message"] for item in gate["blockers"]]
@@ -2503,20 +2534,65 @@ async def approve_intake_source(request_id: UUID, user: dict = Depends(admin_cal
         blockers.append(attestation_blocker)
     if blockers:
         raise HTTPException(409, " / ".join(blockers))
-    evidence = row.get("evidence") or {}
-    decision = {"commit_sha": row["commit_sha"], "scan_sha256": intake_proposal.scan_basis(gate),
-                "artifact_sha256": (record.get("artifact") or {}).get("sha256"),
-                "actor": user["principal"], "at": datetime.now(UTC).isoformat()}
+    scanned = intake_proposal.scan_basis(gate)
+    artifact = (record.get("artifact") or {}).get("sha256")
+    now = datetime.now(UTC)
+    if previous and (previous.get("commit_sha") != row["commit_sha"] or previous.get("scan_sha256") != scanned
+                     or previous.get("artifact_sha256") != artifact):
+        raise HTTPException(409, "기존 승인과 검사 결과가 다릅니다. 재검증하세요.")
+    approved_at = datetime.fromisoformat(previous["at"]) if previous else now
+    until = approved_at + timedelta(days=SOURCE_APPROVAL_DAYS)
+    acceptance = (gate.get("critical") or {}).get("acceptance")
+    if acceptance:
+        until = min(until, acceptance["expires_at"])
+    if until <= now:
+        raise HTTPException(409, "소스 승인 기한이 지났습니다. 재검증하세요.")
+    try:
+        internal_url, checked = await publish_internal_repo({**row, "provenance": record})
+    except ProvenanceMismatch as exc:
+        raise HTTPException(409, "배포 파일이 검증한 소스와 다릅니다. 재검증하세요.") from exc
+    decision = {"commit_sha": row["commit_sha"], "scan_sha256": scanned, "artifact_sha256": artifact,
+                "actor": previous["actor"] if previous else actor, "at": approved_at.isoformat(),
+                "expires_at": until.isoformat()}
+    if acceptance:
+        decision["risk_acceptance_id"] = acceptance["id"]
+    record["verification"] = {**(record.get("verification") or {}), **checked, "by": actor, "at": now.isoformat()}
     updated = await review.transition(
-        """UPDATE mcp_intake_requests SET evidence=%s, updated_at=now()
+        """UPDATE mcp_intake_requests SET status='APPROVED', evidence=%s, provenance=%s, internal_repo_url=%s,
+                  reviewed_by=%s, reviewed_at=%s, updated_at=now()
            WHERE id=%s AND status='VALIDATED' AND commit_sha=%s AND evidence=%s AND provenance=%s RETURNING id""",
-        (Jsonb({**evidence, "source_approval": decision}), request_id, row["commit_sha"], Jsonb(evidence),
-         Jsonb(row.get("provenance") or {})),
-        kind="intake-source-approve", outcome="approved", target_kind="intake", target_id=request_id,
-        actor=user["principal"], applicant=row["submitted_by"], scope=decision)
+        (Jsonb({**evidence, "source_approval": decision}), Jsonb(record), internal_url, decision["actor"], approved_at,
+         request_id, row["commit_sha"], Jsonb(evidence), Jsonb(row.get("provenance") or {})),
+        kind="intake-source-publish" if previous else "intake-source-approve",
+        outcome="recorded" if previous else "approved", target_kind="intake", target_id=request_id,
+        actor=actor, applicant=row["submitted_by"], scope=decision)
     if not updated:
         raise HTTPException(409, "검사 결과가 바뀌었습니다. 보고서를 다시 확인하세요.")
-    return {"message": "검사한 커밋의 소스를 승인했습니다."}
+
+
+async def publish_previous_source_approvals() -> None:
+    try:
+        rows = await db.fetch_all(
+            """SELECT * FROM mcp_intake_requests WHERE intake_kind='repository' AND status='VALIDATED'
+                 AND commit_sha=evidence->'source_approval'->>'commit_sha' AND registered_server_id IS NULL""")
+        for row in rows:
+            try:
+                async with INTAKE_APPROVAL_LOCK:
+                    await publish_source_approval(row, "system")
+            except Exception:
+                LOG.exception("Could not publish previously approved source for intake %s", row["id"])
+    except Exception:
+        LOG.exception("Could not load previously approved sources")
+
+
+@app.post("/api/mcp-requests/{request_id}/source-approve")
+async def approve_intake_source(request_id: UUID, user: dict = Depends(admin_caller)):
+    async with INTAKE_APPROVAL_LOCK:
+        row = await approval_row(request_id, user)
+        if row["intake_kind"] != "repository" or row["status"] != "VALIDATED" or not row.get("commit_sha"):
+            raise HTTPException(409, "저장소 검사가 끝난 신청만 승인할 수 있습니다.")
+        await publish_source_approval(row, user["principal"])
+    return {"message": "승인했습니다. 신청자가 CLIMINT에서 소스를 받을 수 있습니다."}
 
 
 @app.post("/api/mcp-requests/{request_id}/approval-preview")
@@ -2774,14 +2850,15 @@ async def reject_mcp_request(request_id: UUID, request: IntakeRejection, authori
     row = await review.transition(
         """UPDATE mcp_intake_requests
            SET status='REJECTED', review_note=%s, reviewed_by=%s, reviewed_at=now(), updated_at=now()
-           WHERE id=%s AND status IN ('HOLD','VALIDATION_QUEUED','VALIDATED','REMOTE_REVIEWED','FAILED')
+           WHERE id=%s AND (status IN ('HOLD','VALIDATION_QUEUED','VALIDATED','REMOTE_REVIEWED','FAILED') OR
+              (status='APPROVED' AND registered_server_id IS NULL AND evidence ? 'source_approval'))
            RETURNING id, status, review_note, reviewed_by, reviewed_at, submitted_by""",
         (request.note.strip(), user["principal"], request_id),
         kind="intake-reject", outcome="rejected", target_kind="intake", target_id=request_id,
         actor=user["principal"], reason=request.note.strip(),
     )
     if not row:
-        raise HTTPException(409, "승인 전(보류·검증 대기·검증 완료·검증 실패) 요청만 거부할 수 있습니다.")
+        raise HTTPException(409, "심사 중인 요청 또는 배포된 소스 승인을 취소할 수 있습니다.")
     return {"request": row}
 
 
