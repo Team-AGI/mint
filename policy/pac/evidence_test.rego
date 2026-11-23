@@ -156,6 +156,10 @@ test_unverified_non_browser_denied if {
 	verdict("POL-R-19", {"client_type": "non_browser", "client_verified": false}).effect == "DENY"
 }
 
+test_allowed_call_outside_failure_audit if {
+	verdict("POL-E-27", {"outcome": "allowed"}).effect == "ALLOW"
+}
+
 test_malformed_audit_records_denied if {
 	observation := object.union(cases["POL-O-16"].valid, {"records": [true, null]})
 	verdict("POL-O-16", observation).effect == "DENY"

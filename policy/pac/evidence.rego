@@ -210,6 +210,11 @@ passes contains "POL-E-27" if {
 	obs.persisted_to in {"central", "protected_buffer"}
 }
 
+# 허용된 호출은 이 정책의 대상(거부·실패·예외)이 아니다.
+passes contains "POL-E-27" if {
+	obs.outcome == "allowed"
+}
+
 # METADATA
 # custom:
 #   pol_id: POL-E-28
