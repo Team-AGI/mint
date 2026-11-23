@@ -1369,6 +1369,7 @@ export const EN = {
   "근거 설명": "Explanation",
   "도입 승인 · {}": "Onboarding approval · {1}",
   "도구를 하나 이상 선택하세요.": "Select at least one tool.",
+  "사용 기한과 사용 대상을 확인한 뒤 다시 승인하세요.": "Check the validity period and audience, then approve again.",
   "충족": "Met",
   "미충족": "Not met",
   "불명확": "Unclear",
