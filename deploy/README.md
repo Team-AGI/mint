@@ -177,6 +177,7 @@ git checkout v<이전 판본>
 | `./mint.sh litellm enable\|check\|status\|rotate-key\|disable` | LiteLLM 연동을 관리합니다. |
 | `./mint.sh logs [서비스]` | 최근 로그를 표시합니다. |
 | `./mint.sh down` | 서비스를 중지하고 데이터는 유지합니다. |
+| `./mint.sh heal` | 재부팅 직후 바인딩 주소가 늦게 올라와 포트를 열지 못한 HTTPS 앞단·모델 프록시만 다시 만듭니다. `up`이 현재 사용자의 cron에 1분 주기로 등록합니다. |
 | `./mint.sh compose <인자>` | 인증서 설정을 포함해 Docker Compose 명령을 실행합니다. |
 
 일시 중지는 `./mint.sh down`, 재기동은 `./mint.sh up`을 사용합니다. 완전 제거가 필요하면 먼저 보존할 백업과 인증서·키를 확인한 후 `./mint.sh compose down --volumes`로 이 배포의 컨테이너와 볼륨을 제거하고, 서버의 배포 디렉터리와 별도 비밀 파일을 조직의 보존 정책에 따라 처리합니다. 볼륨 제거는 DB와 CA를 포함하므로 복구에 백업이 필요합니다.
@@ -188,6 +189,7 @@ git checkout v<이전 판본>
 | 설치 전 검사 실패 | Docker 데몬 접근 권한, Compose v2, OpenSSL과 Python 3 설치를 확인합니다. |
 | 기동 후 준비되지 않음 | `./mint.sh status`, `./mint.sh logs gateway`, `./mint.sh logs agent-service`로 상태를 확인합니다. 내부 대역 충돌과 이미지 다운로드 연결도 확인합니다. |
 | 브라우저 인증서 경고 | 접속 이름과 인증서 이름, CA 지문과 브라우저의 신뢰 저장소를 확인합니다. `file` 방식은 체인·키 권한과 DNS를 확인합니다. |
+| 재부팅 후 콘솔 접속 불가 | `docker ps -a`에서 `caddy`·`model-proxy`가 `cannot assign requested address`로 멈췄다면 바인딩 주소가 늦게 올라온 경우입니다. 1분 안에 `heal`이 복구하며, cron이 없으면 `./mint.sh heal`을 실행합니다. |
 | 직원 PC 연결 실패 | 직원 PC에서 지정 IP의 443과 모델 프록시 포트에 도달하는지, 사설 CA와 계정·PC 상태가 올바른지 확인합니다. |
 | 도구 출력 보류 | 출력 검사는 도구가 실행된 후에도 실패할 수 있습니다. 호출 기록의 실행 여부와 실제 처리 결과를 확인한 뒤 재시도합니다. |
 | 복구 시 키 불일치 | 현재 `.env`와 백업 키가 다르면 복구가 중단됩니다. 올바른 백업과 서버를 확인합니다. 키를 임의 생성하지 않습니다. |

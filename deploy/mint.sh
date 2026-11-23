@@ -22,6 +22,7 @@ usage() {
 ./mint.sh litellm check | status | rotate-key < 새 키 파일 | disable
 ./mint.sh logs [서비스]                      로그
 ./mint.sh down                               정지(데이터 유지)
+./mint.sh heal                               재부팅 뒤 포트를 못 연 앞단 복구(up이 cron에 1분 주기로 등록)
 ./mint.sh compose <인자…>                    같은 설정으로 docker compose 실행
 EOF
 }
@@ -219,6 +220,30 @@ up() {
   if [[ $with_siem == 1 ]]; then dc --profile siem up -d siem-worker; fi
   echo "[4/4] 루트 인증서"
   export_ca
+  install_heal
+}
+
+# 재부팅 직후 MINT_BIND 주소(예: Tailscale IP)가 아직 없으면 Docker가 caddy·model-proxy 포트를 열지 못하고
+# 그 컨테이너를 다시 시도하지 않는다. cron이 1분마다 부르면, 주소가 생긴 뒤 그 실패로 멈춘 서비스만 다시 만든다.
+# ./mint.sh down으로 멈춘 컨테이너는 State.Error가 비어 있어 건드리지 않는다.
+heal() {
+  local bind s failed=()
+  bind="$(env_value MINT_BIND)"
+  [[ -n "$bind" ]] && ip -o -4 addr show | grep -qF " $bind/" || return 0
+  for s in caddy model-proxy; do
+    [[ "$(docker inspect -f '{{.State.Running}} {{.State.Error}}' "$(project)-$s-1" 2>/dev/null)" == "false "?* ]] && failed+=("$s")
+  done
+  ((${#failed[@]})) || return 0
+  load_env
+  if [[ " ${failed[*]} " == *" caddy "* ]]; then console_caddy_prepare dc; fi
+  dc up -d --no-deps --force-recreate "${failed[@]}"
+}
+
+install_heal() {
+  command -v crontab >/dev/null || { echo "mint: crontab이 없어 재부팅 뒤 자동 복구를 등록하지 못했습니다(./mint.sh heal을 수동 실행)." >&2; return 0; }
+  local cmd="'$DEPLOY_DIR/mint.sh' heal"
+  { crontab -l 2>/dev/null | grep -vF "$DEPLOY_DIR/mint.sh' heal" || true
+    echo "* * * * * PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin $cmd >/dev/null 2>&1"; } | crontab -
 }
 
 install_stack() {
@@ -476,6 +501,7 @@ case "${1:-help}" in
   litellm) shift; litellm "$@" ;;
   logs) shift; load_env; dc logs --tail=300 "$@" ;;
   down) load_env; dc --profile siem stop ;;
+  heal) heal ;;
   compose) shift; load_env; dc "$@" ;;
   help|-h|--help) usage ;;
   *) usage; exit 2 ;;
