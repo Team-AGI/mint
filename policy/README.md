@@ -32,7 +32,9 @@ policy/
     ├── connect.rego   등록 및 연결: 연결·승인 기록·로컬 실행·OAuth·복원 (package mcp.pol.connect)
     ├── call.rego      실행: Tool 호출 한 건 (package mcp.pol.call)
     ├── ops.rego       관리·폐기: 운영 중 서버 상태 점검 (package mcp.pol.ops)
-    └── resource.rego  Resource·Prompt (package mcp.pol.resource)
+    ├── resource.rego  Resource 및 Prompt (package mcp.pol.resource)
+    ├── evidence.rego  집행 구성요소에서 수집한 증거 판정 (package mcp.pol.evidence)
+    └── evidence_test.rego  증거 판정 회귀 테스트
 ```
 
 | 파일 | 역할 | 판정 단위 | 규칙이 있는 정책 |
@@ -44,8 +46,11 @@ policy/
 | `call.rego` | `request.stage`에 따라 Tool 호출 전달, 결과 반환, Tool 목록 반환을 판정합니다. | 호출 한 건 | 30 |
 | `ops.rego` | 운영 중인 서버 목록 스냅숏에서 서버별 위반과 조치를 냅니다. | 스냅숏 한 건 | 13 |
 | `resource.rego` | Prompt 템플릿 사용, Resource 읽기·목록·변경을 판정합니다. | 요청 한 건 | 5 |
+| `evidence.rego` | 인증, Agent, 저장소 및 운영 시스템에서 수집한 증거를 판정합니다. | 정책과 관측값 한 건 | 24 |
 
-정책 90개 중 Rego 규칙이 있는 정책은 66개입니다. 한 정책이 여러 패키지에 나뉘어 있을 수 있어(예: `POL-I-10`은 도입 신청 단계의 분류와 호출 단계의 확인) 위 표의 합계는 66보다 큽니다. 나머지 24개는 이 패키지에 규칙이 없습니다. 카탈로그에서 정책별 `category`·`enforced_by`·`note`로 구분합니다.
+정책 90개 모두에 Rego 판정 규칙이 있습니다. 기존 패키지가 66개를, 증거 판정 패키지(`evidence.rego`)가 나머지 24개를 판정합니다. 같은 정책이 여러 패키지에 나뉠 수 있어 위 표의 수를 더하면 고유 정책 수보다 큽니다.
+
+판정 규칙이 있다고 해서 그 정책이 자동으로 집행되는 것은 아닙니다. `evidence.rego`는 관측값을 받아 충족 여부만 판정하며, 현재 게이트웨이는 이 패키지를 불러오지 않고 관측값을 만들어 넣는 연동도 없습니다. 24개 정책의 실제 집행은 지금처럼 각 구성요소(인증, Agent, 감사 저장소, 폐기 절차)가 맡고, 콘솔에 보이는 정책별 집행 방식도 `full_stack_lab/gateway/app/organization_policies.json`의 분류를 따릅니다.
 
 ### 패키지별 판정 단계
 
@@ -65,6 +70,7 @@ policy/
 | | `resource_update` | Resource 내용·출처 변경을 반영하기 전 |
 | `mcp.pol.ops` | `periodic` `update` `restore` `package_change` `config_change` `incident` `provider_termination` | 점검을 일으킨 사건(`event`) |
 | `mcp.pol.intake` | 없음 | 신청서 한 건을 한 번에 심사 |
+| `mcp.pol.evidence` | `policy_id` | 관측값으로 지정한 정책 한 건을 평가 |
 
 `mcp.pol.resource`는 게이트웨이가 Resource·Prompt를 중개하지 않는 현재 구성에서 이 경로를 모두 거부한다는 전제로 작성되었습니다. 중개를 도입할 때 붙일 판정입니다.
 
@@ -101,7 +107,7 @@ policy/
 
 ## 판정 출력
 
-`intake`, `connect`, `call`, `ops`, `resource` 모든 패키지가 `findings`(걸린 정책별 판정 집합)와 `decision`(최종 결과)을 냅니다.
+`intake`, `connect`, `call`, `ops`, `resource`, `evidence` 패키지가 `findings`(걸린 정책별 판정 집합)와 `decision`(최종 결과)을 냅니다.
 
 ```json
 {
@@ -267,11 +273,37 @@ policy/
    | Tool 호출 | `data.mcp.pol.call.decision` |
    | 운영 점검 | `data.mcp.pol.ops.decision` |
    | Resource·Prompt | `data.mcp.pol.resource.decision` |
+   | 집행 증거 | `data.mcp.pol.evidence.decision` |
    | 정책별 판정 | 위 경로의 `decision`을 `findings`로 바꿉니다. |
    | 운영 점검 위반 | `data.mcp.pol.ops.violations` |
    | 카탈로그 한 항목 | `data.mcp.pol.catalog.policies["POL-R-01"]` |
 
 OPA 서버로 올려 질의할 때는 `opa run --server policy/pac pol-data.json`으로 띄운 뒤 `POST /v1/data/mcp/pol/call/decision` 에 `{"input": {...}}`를 보냅니다. 이 경로는 게이트웨이가 쓰는 `opa` 서비스와 별개의 인스턴스에서 실행하십시오.
+
+### 집행 증거를 판정하기
+
+`mcp.pol.evidence`는 한 번에 정책 ID 하나를 받습니다. `policy_id`에 대상 ID를, `observation`에 해당 구성요소가 수집한 관측값을 넣습니다. 공통 `facts.trusted`와 `facts.now_ns`도 필요합니다. 신뢰 표식과 관측값은 이를 검증한 시스템이 구성해야 합니다. 테스트에서는 가상의 관측값을 사용합니다.
+
+예를 들어 `POL-E-22`를 아래 `input.json`으로 평가합니다. `reservation_status`의 `acquired`는 실행기가 동일 요청 ID에 대한 원자적 실행 예약을 획득했다는 뜻입니다. `already_used`로 바꾸면 `DENY`가 나옵니다.
+
+```json
+{
+  "policy_id": "POL-E-22",
+  "facts": {"trusted": true, "now_ns": 1793600000000000000},
+  "observation": {
+    "request_id": "request-1",
+    "reserved_request_id": "request-1",
+    "reservation_status": "acquired"
+  }
+}
+```
+
+```bash
+opa eval -d policy/pac -i input.json --format pretty 'data.mcp.pol.evidence.decision'
+opa test --fail-on-empty policy/pac
+```
+
+`evidence_test.rego`에 24개 정책의 정상 입력과 위반 예시가 있습니다. `POL-R-06`의 자격 식별값에는 원본 토큰 대신 검증된 지문이나 식별자를 사용합니다. 폐기 정책의 회수 및 제거 목록에는 실제 대상과 확인된 결과를 구분해 전달합니다. `ALLOW`는 주어진 관측값이 해당 정책의 판정 조건을 충족한다는 뜻입니다. 실제 실행 예약, 경보 발송, 자격 회수 및 접근 차단은 해당 구성요소에서 수행합니다.
 
 ## 작성 규칙
 
