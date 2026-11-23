@@ -961,7 +961,7 @@ async def authenticate_device(key: str | None, scope: str) -> dict:
     for row in rows:
         # 접두사로 후보를 좁히고 비교는 상수 시간으로 한다.
         if row["key_hash"] and hmac.compare_digest(row["key_hash"], digest):
-            if scope not in (row["scopes"] or []):
+            if scope and scope not in (row["scopes"] or []):
                 raise PermissionError("이 장치에는 " + scope + " 권한이 없습니다.")
             return row
     raise PermissionError("엔드포인트 장치 자격이 유효하지 않습니다.")

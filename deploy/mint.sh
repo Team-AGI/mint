@@ -22,6 +22,7 @@ usage() {
 ./mint.sh litellm check | status | rotate-key < 새 키 파일 | disable
 ./mint.sh logs [서비스]                      로그
 ./mint.sh down                               정지(데이터 유지)
+./mint.sh uninstall [--yes] [--no-backup]     서버에서 제거(백업 → 컨테이너·볼륨·이미지·cron 삭제, 저장소·백업은 남김)
 ./mint.sh heal                               재부팅 뒤 포트를 못 연 앞단 복구(up이 cron에 1분 주기로 등록)
 ./mint.sh compose <인자…>                    같은 설정으로 docker compose 실행
 EOF
@@ -237,6 +238,30 @@ heal() {
   load_env
   if [[ " ${failed[*]} " == *" caddy "* ]]; then console_caddy_prepare dc; fi
   dc up -d --no-deps --force-recreate "${failed[@]}"
+}
+
+# 이 서버에서 MINT를 내린다. 먼저 백업을 받고(실패하면 아무것도 지우지 않는다), 이 배포의 컨테이너·볼륨·망·
+# 로컬 빌드 이미지·MCP 실행기와 heal cron을 지운다. 저장소 폴더와 백업은 남긴다.
+uninstall() {
+  local yes=0 keep=1 a answer
+  for a in "$@"; do
+    case "$a" in --yes) yes=1 ;; --no-backup) keep=0 ;; *) die "알 수 없는 옵션: $a" ;; esac
+  done
+  load_env
+  if [[ $yes == 0 ]]; then
+    [[ -t 0 ]] || die "확인 없이 지우려면 --yes를 붙이세요."
+    read -r -p "이 서버의 MINT 컨테이너와 데이터를 지웁니다(백업은 남김). 계속하려면 '삭제'를 입력하세요: " answer
+    [[ "$answer" == 삭제 ]] || die "취소했습니다."
+  fi
+  if [[ $keep == 1 ]]; then backup; fi
+  dc --profile siem down --volumes --remove-orphans --rmi local
+  docker ps -aq --filter label=mcpgw.runtime | xargs -r docker rm -f >/dev/null
+  docker network ls -q --filter label=mcpgw.runtime | xargs -r docker network rm >/dev/null 2>&1 || true
+  if command -v crontab >/dev/null; then
+    { crontab -l 2>/dev/null | grep -vF "$DEPLOY_DIR/mint.sh' heal" || true; } | crontab -
+  fi
+  echo "제거했습니다. 저장소 폴더($REPO_DIR)와 백업은 남겼습니다. 백업에는 키가 있으니 서버 밖으로 옮긴 뒤 폴더를 지우세요."
+  echo "직원 PC의 키트는 각 PC에서 제거합니다(Windows 트레이 「제거」, Linux·macOS는 키트 안내의 --remove)."
 }
 
 install_heal() {
@@ -502,6 +527,7 @@ case "${1:-help}" in
   logs) shift; load_env; dc logs --tail=300 "$@" ;;
   down) load_env; dc --profile siem stop ;;
   heal) heal ;;
+  uninstall) shift; uninstall "$@" ;;
   compose) shift; load_env; dc "$@" ;;
   help|-h|--help) usage ;;
   *) usage; exit 2 ;;

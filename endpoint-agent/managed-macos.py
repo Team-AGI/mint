@@ -372,7 +372,12 @@ def main():
         parser.exit(2, 'macOS 관리자 권한이 필요합니다. install.sh로 실행하세요.\n')
     try:
         if args.remove:
-            rollback(account_name(args.user))
+            account = account_name(args.user)
+            try:
+                core_module().revoke_self(json.loads((STATE / account / 'config.json').read_text()))
+            except (OSError, ValueError):
+                pass  # 설정이 없으면 서버에 알릴 장치도 없다
+            rollback(account)
         else:
             if not args.enrollment.is_file():
                 account = account_name(args.user)

@@ -824,7 +824,15 @@ def main() -> int:
                 raise Failed("설치 파일의 유효 시간이 지났습니다. 콘솔에서 설치 파일을 새로 받으세요. 기존 설치는 그대로입니다.")
         if args.remove:
             removed, legacy = False, legacy_companion(employee)
+            revoked = set()
             for account in (employee, companion_of(employee)):
+                try:
+                    config = json.loads((STATE / account / "config.json").read_text())
+                except (OSError, ValueError):
+                    config = {}
+                if config.get("endpoint_id") not in revoked:
+                    managed.revoke_self(config)
+                    revoked.add(config.get("endpoint_id"))
                 if installed(account):
                     rollback(account)
                     removed = True

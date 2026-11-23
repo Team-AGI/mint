@@ -1776,6 +1776,12 @@ async def endpoint_device_revoke(endpoint_id: str, user: dict = Depends(admin_ca
         raise HTTPException(404, str(exc)) from exc
 
 
+@app.post("/api/endpoint/self/revoke")
+async def endpoint_self_revoke(device: dict = Depends(endpoint_device(""))) -> dict:
+    """PC에서 키트를 제거할 때 그 장치가 자기 자격을 함께 철회한다. 자기 권한만 줄이므로 관리자 승인을 거치지 않는다."""
+    return await endpoint_plane.revoke_device(device["endpoint_id"], "device:" + device["endpoint_id"])
+
+
 @app.get("/api/endpoint/devices")
 async def endpoint_device_list(user: dict = Depends(admin_caller)) -> dict:
     return {"devices": await endpoint_plane.devices()}

@@ -1221,6 +1221,20 @@ def prune_empty_folders():
 
 
 def uninstall(args):
+    # 트레이의 「제거」: 서버의 장치 등록도 함께 해제한다. 서버에 닿지 않아도 PC 제거는 계속한다.
+    try:
+        config = json.loads((STATE / args.user.lower() / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        config = {}
+    if config.get("device_key") and config.get("gateway_url"):
+        try:
+            request(config, "/api/endpoint/self/revoke", {}, deadline=time.monotonic() + 10)
+            print("서버의 장치 등록을 해제했습니다")
+        except urllib.error.HTTPError as exc:
+            print("서버에서 이미 등록 해제된 장치입니다" if exc.code == 401
+                  else f"서버 등록 해제 실패(HTTP {exc.code}): 관리자 콘솔에서 등록 해제하세요")
+        except Exception as exc:  # noqa: BLE001
+            print(f"서버에 연결하지 못해 등록 해제를 못 했습니다({type(exc).__name__}): 관리자 콘솔에서 등록 해제하세요")
     rollback(args)
     prune_empty_folders()
 

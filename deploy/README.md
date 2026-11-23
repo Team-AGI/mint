@@ -177,10 +177,11 @@ git checkout v<이전 판본>
 | `./mint.sh litellm enable\|check\|status\|rotate-key\|disable` | LiteLLM 연동을 관리합니다. |
 | `./mint.sh logs [서비스]` | 최근 로그를 표시합니다. |
 | `./mint.sh down` | 서비스를 중지하고 데이터는 유지합니다. |
+| `./mint.sh uninstall [--yes] [--no-backup]` | 백업을 받은 뒤 이 배포의 컨테이너·볼륨·로컬 이미지·MCP 실행기와 `heal` cron을 지웁니다. 저장소 폴더와 백업은 남깁니다. |
 | `./mint.sh heal` | 재부팅 직후 바인딩 주소가 늦게 올라와 포트를 열지 못한 HTTPS 앞단·모델 프록시만 다시 만듭니다. `up`이 현재 사용자의 cron에 1분 주기로 등록합니다. |
 | `./mint.sh compose <인자>` | 인증서 설정을 포함해 Docker Compose 명령을 실행합니다. |
 
-일시 중지는 `./mint.sh down`, 재기동은 `./mint.sh up`을 사용합니다. 완전 제거가 필요하면 먼저 보존할 백업과 인증서·키를 확인한 후 `./mint.sh compose down --volumes`로 이 배포의 컨테이너와 볼륨을 제거하고, 서버의 배포 디렉터리와 별도 비밀 파일을 조직의 보존 정책에 따라 처리합니다. 볼륨 제거는 DB와 CA를 포함하므로 복구에 백업이 필요합니다.
+일시 중지는 `./mint.sh down`, 재기동은 `./mint.sh up`을 사용합니다. 완전 제거는 `./mint.sh uninstall`입니다. `삭제`를 입력해 확인하면(자동화는 `--yes`) 먼저 `backups/` 아래에 백업을 받고, 백업이 끝난 뒤에만 컨테이너와 볼륨을 지웁니다. 볼륨에는 DB와 CA가 있으므로 다시 설치해 복구하려면 이 백업이 필요합니다. 백업 디렉터리를 서버 밖 안전한 곳에 옮긴 뒤 저장소 폴더와 별도 비밀 파일을 조직의 보존 정책에 따라 처리합니다. 직원 PC는 각 PC에서 키트를 제거합니다.
 
 ## 문제 해결
 

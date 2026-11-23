@@ -169,6 +169,21 @@ def request(config, path, body=None, *, credential=True, download=None, deadline
         return json.loads(response.read(131072))
 
 
+def revoke_self(config):
+    """키트를 제거할 때 이 장치의 서버 자격도 함께 철회한다(관리자의 등록 해제와 같은 결과).
+    서버에 닿지 않아도 PC 제거는 계속하고, 그때는 관리자 콘솔의 등록 해제가 남는다고 알린다."""
+    if not (isinstance(config, dict) and config.get("device_key") and config.get("gateway_url")):
+        return
+    try:
+        request(config, "/api/endpoint/self/revoke", {}, deadline=time.monotonic() + 10)
+        print("서버의 장치 등록을 해제했습니다")
+    except urllib.error.HTTPError as exc:
+        print("서버에서 이미 등록 해제된 장치입니다" if exc.code == 401
+              else f"서버 등록 해제 실패(HTTP {exc.code}): 관리자 콘솔에서 등록 해제하세요")
+    except Exception as exc:  # noqa: BLE001 - 오프라인·인증서 문제여도 PC 제거는 이어 간다
+        print(f"서버에 연결하지 못해 등록 해제를 못 했습니다({type(exc).__name__}): 관리자 콘솔에서 등록 해제하세요")
+
+
 def verify_transport(config):
     observer = load_module("transport_observer", Path(__file__).with_name("agent.py"))
     observer.GATEWAY_URL = config["gateway_url"]
