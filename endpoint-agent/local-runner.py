@@ -602,6 +602,39 @@ def employee_documents(config):
     return (employee.pw_dir,employee.pw_uid,employee.pw_gid)
 
 
+def prepare_windows_isolation_trial(config, job):
+    import sys
+
+    bundle = Path(__file__).with_name('pol-i08-trial')
+    profile = bundle / 'profile.json'
+    paths = [bundle, *bundle.rglob('*')]
+    if (os.name != 'nt' or len(paths) > 200 or not all(path.exists() for path in paths)
+            or any(path.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT for path in paths)
+            or not config['i08_protected'](paths)):
+        raise ValueError('보호된 Windows 격리 프로필이 아닙니다')
+    profile_bytes = profile.read_bytes()
+    hashes = json.loads(profile_bytes)
+    files = {path.relative_to(bundle).as_posix(): path for path in paths if path.is_file() and path != profile}
+    if (not isinstance(hashes, dict) or any(path.stat().st_nlink != 1 for path in files.values())
+            or hashes != {name: hashlib.sha256(path.read_bytes()).hexdigest()
+                                                   for name, path in files.items()}
+            or not {'runtime/sandbox_mcp.py', 'runtime/mount-profile.json', 'public/sample.txt'} <= hashes.keys()):
+        raise ValueError('격리 실행 파일 또는 샘플의 승인 해시가 일치하지 않습니다')
+    mount = json.loads(files['runtime/mount-profile.json'].read_bytes())
+    if mount != {'preopens': [{'path': 'public', 'guest': '/public', 'read_only': True}],
+                 'inherit_env': False, 'verified': True}:
+        raise ValueError('공개 폴더 읽기 전용 격리 설정이 아닙니다')
+    script = bundle / 'runtime' / 'sandbox_mcp.py'
+    code = 'import runpy,sys;sys.path[:0]=sys.argv[1:3];runpy.run_path(sys.argv[3],run_name="__main__")'
+    python = Path(sys.executable).with_name('python.exe')
+    if not python.is_file():
+        raise ValueError('보호된 Windows Python 실행기가 없습니다')
+    command = [str(python), '-B', '-I', '-S', '-c', code, str(bundle / 'dependencies'), str(script.parent), str(script)]
+    proof = {'job_id': str(job['id']), 'manifest_sha256': job['manifest_sha256'],
+             'profile_sha256': hashlib.sha256(profile_bytes).hexdigest()}
+    return (command, bundle, {}), proof
+
+
 def execute_job(config, job, request, account):
     manifest=job['manifest']
     if account.pw_uid!=job['account_uid'] or account.pw_uid!=config['uid']:
@@ -638,25 +671,40 @@ def execute_job(config, job, request, account):
     answer={'error':'로컬 실행 결과를 확인하지 못했습니다'}
     isolation=None
     mcp_error=''
+    windows_trial = bool(control.get('windows_isolation_trial'))
     try:
-        if "source" in manifest:
+        if manifest['env'].get('MINT_I08_WINDOWS_TRIAL') == '1' and not windows_trial:
+            raise ValueError('POL-I-08 시험 작업에 시작 전 격리 정책이 연결되지 않았습니다')
+        proof = None
+        if windows_trial:
+            try:
+                prepared, proof = prepare_windows_isolation_trial(config, job)
+            except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+                prepared = None
+            namespace = 'windows-wasi'
+        elif "source" in manifest:
             prepared=helper("stdio_source").prepare(config,manifest,request,check)
             namespace="process"
         else:
             engine,namespace=engine_configuration(config,manifest,check)
         check()
-        started=request(config,path+'/start',{})
+        started=request(config,path+'/start',{'isolation_proof': proof} if windows_trial else {})
         check_control(job,started)
+        if windows_trial and (not prepared or (started.get('isolation_decision') or {}).get('effect') != 'RESTRICT'):
+            raise ValueError('POL-I-08 사전 격리 제한 허용 확인 실패')
         deadline=min(iso(started['deadline']).timestamp(),time.time()+READ_SECONDS)
         threading.Thread(target=stop_at_deadline,daemon=True).start()
-        if 'source' in manifest:
+        if windows_trial or 'source' in manifest:
             session=ProcessSession.__new__(ProcessSession)
             session.__init__(prepared,account,check,job["id"],config)
         else:
             session=Session.__new__(Session)
             session.__init__(engine,manifest,account,namespace,'mcpgw-local-'+job['id'],check,employee_documents(config))
         isolation=session.mapping(namespace)
-        if 'source' not in manifest:
+        if windows_trial:
+            isolation.update({'engine': 'wasmtime', 'network': 'not_exposed_to_guest',
+                              'opa_decision_id': started['isolation_decision']['decision_id'], **proof})
+        elif 'source' not in manifest:
             isolation['engine_version']=config['local_engine']['version']
             isolation['engine']=config['local_engine']['engine']
         check()
@@ -692,7 +740,12 @@ def execute_job(config, job, request, account):
         detail=str(exc)[:200] if type(exc) is ValueError else ''
         if hasattr(exc,'code') and hasattr(exc,'read'):  # urllib HTTPError: the Gateway's own refusal sentence
             try:
-                detail=f'{exc.code} '+exc.read()[:300].decode(errors='replace')
+                raw = exc.read(1024)
+                detail=f'{exc.code} '+raw[:300].decode(errors='replace')
+                if windows_trial and exc.code == 409:
+                    denied = json.loads(raw).get('detail', '')
+                    if isinstance(denied, str) and denied.startswith('POL-I-08'):
+                        answer['error'] = denied[:250]
             except Exception:
                 pass
         print(json.dumps({'local_runner':'job_failed','job':job['id'],'error':type(exc).__name__,'detail':detail},
@@ -839,6 +892,10 @@ def prepare_once(config, request, log, account, done, folders, failed):
             verify_manifest(config,manifest,entry['signature'],entry['manifest_sha256'],entry['server_id'])
             if iso(manifest['approval']['expires_at']).timestamp()<=time.time():
                 raise ValueError('승인 기한이 지났습니다')
+            if manifest['env'].get('MINT_I08_WINDOWS_TRIAL') == '1' or entry.get('windows_isolation_trial'):
+                prepare_windows_isolation_trial(config, {**entry, 'id': 'prefetch'})
+                done.add(key)
+                continue
             gap=missing_path(manifest)
             if gap:
                 raise ValueError(f'이 PC에 없는 경로: {gap}')

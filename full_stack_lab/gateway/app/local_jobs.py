@@ -12,18 +12,21 @@ import base64
 import contextvars
 import hashlib
 import json
+import logging
 import os
 import posixpath
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from mcp import types
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from . import db
+from . import connections, db
 
 PREFIX = "local:"
 UTC = timezone.utc
@@ -47,6 +50,7 @@ RATE_LIMIT = 30
 RETENTION_SECONDS = 300
 evidence_context = contextvars.ContextVar("local_job_evidence", default=None)
 transport_context = contextvars.ContextVar("local_job_transport", default={})
+logger = logging.getLogger(__name__)
 
 
 IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:-]{0,200}@sha256:[0-9a-f]{64}$")
@@ -611,7 +615,52 @@ async def _same_control(row,device,*,connection=None):
     return endpoint_plane.control_matches(policy,row['device_policy']) and await endpoint_plane.policy_accepted(device,policy,connection=connection)
 
 
-async def validate_job(device: dict, job_id: str, *, start=False) -> dict:
+def windows_isolation_trial(row: dict) -> bool:
+    trial_server = os.getenv("MINT_I08_WINDOWS_TEST_SERVER")
+    manifest = row.get("manifest") or {}
+    return bool((manifest.get("env") or {}).get("MINT_I08_WINDOWS_TRIAL") == "1"
+                or (trial_server and row["server_id"] == trial_server))
+
+
+async def require_windows_trial_isolation(device: dict, row: dict, proof: dict | None) -> dict | None:
+    if not windows_isolation_trial(row):
+        return None
+    policy_url = os.getenv("MINT_I08_OPA_URL")
+    if not policy_url:
+        raise NotStarted("POL-I-08 격리 정책을 확인할 수 없습니다.", "POL-I-08")
+    profile = os.getenv("MINT_I08_WINDOWS_PROFILE_SHA256", "")
+    verified = bool(re.fullmatch(r"[0-9a-f]{64}", profile)
+                    and row["server_id"] == os.getenv("MINT_I08_WINDOWS_TEST_SERVER")
+                    and ((row.get("manifest") or {}).get("env") or {}).get("MINT_I08_WINDOWS_TRIAL") == "1"
+                    and (device.get("detail") or {}).get("local_sid")
+                    and device.get("endpoint_id") == os.getenv("MINT_I08_WINDOWS_TEST_DEVICE")
+                    and proof == {"job_id": str(row["id"]), "manifest_sha256": row["manifest_sha256"],
+                                  "profile_sha256": profile})
+    try:
+        opa = connections.shared("local-launch-isolation", lambda: httpx.AsyncClient(timeout=3, trust_env=False))
+        response = await opa.post(policy_url, json={"input": {
+            "facts": {"trusted": True, "now_ns": time.time_ns()},
+            "connection": {"stage": "launch", "kind": "local", "server_id": row["server_id"],
+                           "launch": {"isolation": {"verified": verified, "public_read_only": verified,
+                                                    "internal_data_blocked": verified}}},
+        }})
+        response.raise_for_status()
+        payload = response.json()
+        decision_id = str(uuid.UUID(payload["decision_id"]))
+        expected = "RESTRICT" if verified else "DENY"
+        effects = {item["effect"] for item in payload["result"] if item["policy_id"] == "POL-I-08"}
+        if effects != {expected} or any(item["policy_id"] == "INPUT_CONTRACT" for item in payload["result"]):
+            raise ValueError("Unexpected isolation decision for the Windows trial")
+    except (httpx.HTTPError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        logger.warning("POL-I-08 local start blocked job=%s opa_unavailable=true", row["id"])
+        raise NotStarted("POL-I-08 격리 판정을 확인할 수 없습니다.", "POL-I-08") from exc
+    logger.info("POL-I-08 local start job=%s effect=%s decision_id=%s", row["id"], expected, decision_id)
+    if not verified:
+        raise NotStarted(f"POL-I-08: 승인된 공개자료 읽기 전용 격리를 확인할 수 없습니다. ({decision_id})", "POL-I-08")
+    return {"effect": expected, "decision_id": decision_id}
+
+
+async def validate_job(device: dict, job_id: str, *, start=False, isolation_proof=None) -> dict:
     from . import registry
     device = await _device(device['endpoint_id'])
     stop = await db.fetch_one('SELECT stop_requested FROM local_jobs WHERE id=%s AND device_id=%s',
@@ -635,7 +684,9 @@ async def validate_job(device: dict, job_id: str, *, start=False) -> dict:
         if (not allowed or row['stop_requested'] or row['state']!='claimed' or row['deadline']<=datetime.now(UTC)
                 or row['lease_until']<=datetime.now(UTC) or not await current_job(connection,row,device)):
             raise NotStarted("정책·서명 세대·철회 상태가 바뀌었거나 실행 기한이 지났습니다.")
+        isolation_decision = None
         if start:
+            isolation_decision = await require_windows_trial_isolation(device, row, isolation_proof)
             run_seconds=min(RUN_SECONDS,row['run_seconds'])
             started = await (await connection.execute("""UPDATE local_jobs SET started_at=clock_timestamp(),
                 deadline=LEAST(deadline,clock_timestamp()+make_interval(secs=>%s)),
@@ -657,7 +708,8 @@ async def validate_job(device: dict, job_id: str, *, start=False) -> dict:
         spec = registry.server(row['server_id']) or {}
         if allowed['observed'] and (spec.get('local') or {}).get('manifest_sha256')!=row['manifest_sha256']:
             raise NotStarted("현재 승인 매니페스트와 다릅니다.")
-        return {'policy_generation':allowed['policy_generation'],'manifest_sha256':allowed['manifest_sha256'],
+        return {'windows_isolation_trial': windows_isolation_trial(row), 'isolation_decision': isolation_decision,
+                'policy_generation':allowed['policy_generation'],'manifest_sha256':allowed['manifest_sha256'],
                 'signature_generation':allowed['signature_generation'],'revoked':False,'lifecycle':allowed['lifecycle'] or 'OBSERVING',
                 'device_epoch':device['device_epoch'],'device_policy':row['device_policy'],
                 'account_uid':device['local_uid'],
@@ -819,5 +871,6 @@ async def device_manifests(device):
             local = (registry.server(server_id) or {}).get('local')
             if local and await authorized(connection, device, server_id, local['manifest_sha256'], 'tools/call'):
                 listed.append({'server_id': server_id, 'manifest': local['manifest'], 'signature': local['signature'],
-                               'manifest_sha256': local['manifest_sha256']})
+                               'manifest_sha256': local['manifest_sha256'],
+                               'windows_isolation_trial': windows_isolation_trial({'server_id': server_id, 'manifest': local['manifest']})})
     return listed

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mint-i08-windows-fixture"
+version = "1.0.0"
+description = "Synthetic filesystem isolation MCP fixture for MINT POL-I-08"
+requires-python = ">=3.12"
+dependencies = ["wasmtime==51.0.0"]
+
+[project.scripts]
+mint-i08-windows-fixture = "mint_i08_fixture.__main__:main"
+
+[tool.setuptools.package-data]
+mint_i08_fixture = ["mount-profile.json", "sample-io.wat", "public/sample.txt", "internal-only/sample.txt"]

@@ -139,6 +139,10 @@ services:
     restart: unless-stopped
     environment:
       <<: *gateway-env
+      MINT_I08_WINDOWS_TEST_SERVER: ${MINT_I08_WINDOWS_TEST_SERVER:-}
+      MINT_I08_WINDOWS_TEST_DEVICE: ${MINT_I08_WINDOWS_TEST_DEVICE:-}
+      MINT_I08_WINDOWS_PROFILE_SHA256: ${MINT_I08_WINDOWS_PROFILE_SHA256:-}
+      MINT_I08_OPA_URL: ${MINT_I08_OPA_URL:-}
     depends_on:
       db: {condition: service_healthy}
       opa: {condition: service_healthy}

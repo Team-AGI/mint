@@ -1027,7 +1027,8 @@ def serve(args):
                        check=True, capture_output=True)
         return source_protected(path)
     runner_config={**config, "uid":None, "source_root":str(source_root),
-                   "source_protected":source_protected, "source_seal":source_seal}
+                   "source_protected":source_protected, "source_seal":source_seal,
+                   "i08_protected":protected}
     for target in (runner.run, runner.prepare):
         threading.Thread(target=target, args=(runner_config, request, record), daemon=True).start()
     latest = {"inventory": "pending", "os": {"state": "failed", "error_code": "not_run", "accepted_count": 0}}

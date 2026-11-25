@@ -1937,10 +1937,24 @@ async def endpoint_local_control(job_id: UUID, device: dict = Depends(endpoint_d
         raise HTTPException(409, str(exc)) from exc
 
 
+class LocalIsolationProof(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    job_id: str
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class LocalStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    isolation_proof: LocalIsolationProof | None = None
+
+
 @app.post("/api/endpoint/local-jobs/{job_id}/start")
-async def endpoint_local_start(job_id: UUID, device: dict = Depends(endpoint_device("enforcement"))) -> dict:
+async def endpoint_local_start(job_id: UUID, request: LocalStartRequest | None = None,
+                               device: dict = Depends(endpoint_device("enforcement"))) -> dict:
     try:
-        return await local_jobs.validate_job(device, str(job_id), start=True)
+        proof = request.isolation_proof.model_dump() if request and request.isolation_proof else None
+        return await local_jobs.validate_job(device, str(job_id), start=True, isolation_proof=proof)
     except (PermissionError, ConnectionError, ValueError) as exc:
         raise HTTPException(409, str(exc)) from exc
 
