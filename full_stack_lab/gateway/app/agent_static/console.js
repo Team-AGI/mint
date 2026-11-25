@@ -3964,6 +3964,11 @@ const ACTIONS = {
     const ctx = intakeApproval, form = $("#intake-approve");
     if (!ctx || ctx.id !== el.dataset.id || !form) return;
     const fd = new FormData(form), out = ctx.out, scope = out.pending?.scope;
+    const validDays = fd.get("valid_days"), audience = fd.get("audience");
+    if (!scope && (!Object.hasOwn(VALIDITY, validDays) || !Object.hasOwn(AUDIENCE, audience))) {
+      toast("사용 기한과 사용 대상을 확인한 뒤 다시 승인하세요.", true);
+      return;
+    }
     const selected = scope?.tools || fd.getAll("approved_tool");
     const critical = String(fd.get("critical_reason") || "").trim(), accepted = String(fd.get("risk_reason") || "").trim();
     const missing = !selected.length ? "approved_tool"
@@ -3982,7 +3987,7 @@ const ACTIONS = {
     const assurance = scope?.supplier_assurance || Object.fromEntries(Object.keys(ASSURANCE_LABELS).map((key) => [key, given(out.proposal.supplier_assurance, key)])
       .filter(([, value]) => typeof value === "string"));
     const result = await api(`/api/mcp-requests/${ctx.id}/approve-and-register`, { method: "POST", body: {
-      proposal_sha256: out.proposal_sha256, tools: selected, valid_days: scope?.valid_days || Number(fd.get("valid_days")),
+      proposal_sha256: out.proposal_sha256, tools: selected, valid_days: scope?.valid_days ?? Number(validDays),
       critical_reason: critical, risk_reason: accepted, supplier_assurance: assurance, actions, destinations,
       ...(scope ? { audience: scope.audience || "all", audience_users: scope.audience_users || [] } : audienceBody(fd)) } });
     toast(result.message);
