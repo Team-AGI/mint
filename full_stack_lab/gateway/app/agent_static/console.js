@@ -283,7 +283,8 @@ function ago(value) {
 const json = (v) => html`<pre class="json">${JSON.stringify(v, null, 2)}</pre>`;
 const kv = (pairs) => html`<dl class="kv">${pairs.filter(([, v]) => v !== undefined && v !== null && v !== "")
   .map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>`;
-const empty = (text, { filtered = false, failed = false } = {}) => html`<p class="empty" role="${failed ? "alert" : "status"}">${failed ? "조회 실패" : filtered ? "조건에 맞는 결과 없음" : text}</p>`;
+// 빈 화면에도 다음 행동을 하나 붙인다(LiteLLM판 m.empty와 같은 방식). 실패·필터 결과에는 붙이지 않는다.
+const empty = (text, { filtered = false, failed = false, href = "", action = "" } = {}) => html`<p class="empty" role="${failed ? "alert" : "status"}">${failed ? "조회 실패" : filtered ? "조건에 맞는 결과 없음" : text}${!failed && !filtered && href ? html` <a class="btn sm" href="${href}">${action}</a>` : ""}</p>`;
 const OUTCOME_TONE = [["차단", "Block"], ["승인", "Approval"], ["경보", "Alert"], ["제한", "Restrict"], ["허용", "Allow"]];
 const outcomeDecision = (text) => (OUTCOME_TONE.find(([word]) => String(text || "").includes(word)) || [])[1];
 
@@ -764,7 +765,7 @@ function performancePanels(lat, net, serverName) {
       <tr><th scope="col" class="num"><span title="엔드포인트에서 게이트웨이로 연결을 맺는 시간의 중앙값입니다.">중앙값</span></th><th scope="col" class="num"><span title="연결 시간의 95백분위수(P95)로, 측정된 연결 시간의 약 95%가 이 값 이하입니다.">P95</span></th><th scope="col" class="num"><span title="연속된 연결 시간 측정값 사이 차이의 절댓값을 평균한 값입니다.">변동</span></th><th scope="col" class="num"><span title="연결 점검과 게이트웨이 상태 확인 요청의 실패 비율이며 패킷 손실률이 아닙니다.">실패율</span></th><th scope="col" class="num"><span title="연결 점검과 게이트웨이 상태 확인 요청 횟수의 합계입니다.">횟수</span></th><th scope="col">최근 시각</th><th scope="col">상태</th></tr></thead><tbody>
       ${devices.map((d) => html`<tr><td>${d.hostname ? html`<b>${d.hostname}</b><span class="sub">${entityRef(d.endpoint_id)}</span>` : entityRef(d.endpoint_id)}</td>
         <td class="num">${d.state === "fresh" ? msText(d.rtt_p50_ms) : "—"}</td><td class="num">${d.state === "fresh" ? msText(d.rtt_p95_ms) : "—"}</td><td class="num">${d.state === "fresh" ? msText(d.jitter_ms) : "—"}</td><td class="num">${d.state === "fresh" ? pctText(d.failure_pct) : "—"}</td>
-        <td class="num">${d.probes ?? "—"}</td><td class="small">${when(d.measured_at)}</td><td>${d.state === "fresh" ? d.rtt_p50_ms == null ? chip("alert", "측정 실패") : html`<span title="조회 시각 기준 최근 3분 이내의 측정입니다.">${chip("outline", "최근")}</span>` : d.state === "stale" ? chip("alert", "오래됨") : chip("outline", "미측정")}</td></tr>`)}</tbody></table>` : empty("측정 대상 엔드포인트 없음"), { flush: true, sub: html`<span>조회 시각</span> ${when(net?.checked_at)}` })}
+        <td class="num">${d.probes ?? "—"}</td><td class="small">${when(d.measured_at)}</td><td>${d.state === "fresh" ? d.rtt_p50_ms == null ? chip("alert", "측정 실패") : html`<span title="조회 시각 기준 최근 3분 이내의 측정입니다.">${chip("outline", "최근")}</span>` : d.state === "stale" ? chip("alert", "오래됨") : chip("outline", "미측정")}</td></tr>`)}</tbody></table>` : empty("측정 대상 엔드포인트 없음", { href: "#/endpoints", action: "엔드포인트 보기" }), { flush: true, sub: html`<span>조회 시각</span> ${when(net?.checked_at)}` })}
     ${panel("시스템 자원", html`<div id="system-metrics" aria-live="polite">${metricsCards(null)}</div>`)}
   </div>`;
 }
@@ -1584,7 +1585,7 @@ ROUTES.servers = async (id, tab, query) => {
               <td>${validityChip(s.registration)}</td>
               <td class="num">${users[s.id] ?? "—"}</td><td class="num">${s.calls || 0}</td>
               <td class="num">${rate == null ? "—" : html`${s.blocked || 0} / ${s.calls}<span class="sub">${rate}%</span>`}</td><td class="num muted" aria-hidden="true">›</td></tr>`; })}</tbody></table><p class="empty" role="status" data-list-empty="server-list" hidden>조건에 맞는 결과 없음</p>`
-            : attention ? empty("점검할 MCP 서버 없음") : empty("등록된 MCP 서버 없음"),
+            : attention ? empty("점검할 MCP 서버 없음") : empty("등록된 MCP 서버 없음", { href: "#/intake", action: "도입 신청" }),
             { flush: true, end: attention ? html`<a class="btn sm" href="#/servers?t=servers">전체 보기</a>` : "",
               tools: html`${listToolbar("server-list", "서버 검색")}<div class="server-list-actions"><button class="btn" type="button" data-act="catalog-refresh">정의 변경 확인</button>
                 <select data-registry-export aria-label="도입 승인 등록부 내보내기"><option value="">내보내기</option><option value="csv">CSV</option><option value="json">JSON</option></select></div>` }) },

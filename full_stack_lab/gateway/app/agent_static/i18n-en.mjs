@@ -303,6 +303,7 @@ export const EN = {
   "측정 시각": "Measured at",
   "측정 상태": "Measurement status",
   "측정 대상 엔드포인트 없음": "No endpoints to measure",
+  "엔드포인트 보기": "View endpoints",
   "엔드포인트별 최근 측정": "Latest measurement per endpoint",
   "호출 수": "Call count",
   "판정 분포": "Decision distribution",
