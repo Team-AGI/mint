@@ -11,7 +11,7 @@
 | 서버 | Linux x86-64, 4 vCPU, 메모리 16 GB, 디스크 40 GB 기준 |
 | 소프트웨어 | Docker Engine 24 이상, Docker Compose v2 플러그인, Git, OpenSSL, Python 3. MINT 전용 Docker 데몬과 이에 접근할 권한이 필요합니다. 다른 배포의 MCP 실행 환경과 데몬을 공유하지 않습니다. 기동 시 `mcpgw.runtime` 라벨이 있는 컨테이너와 네트워크를 제거할 수 있습니다. |
 | 네트워크 | 직원 PC가 접속할 수 있는 서버의 사내 IPv4와 이미지 빌드·도입 심사에 필요한 인터넷 연결을 준비합니다. `0.0.0.0`과 loopback 주소는 사용할 수 없습니다. |
-| 수신 포트 | 지정한 IPv4의 TCP 443은 HTTPS 콘솔·MCP·인증에 사용합니다. TCP 3128은 관리형 PC의 모델 프록시에 사용하며 `MODEL_PROXY_PORT`로 변경할 수 있습니다. 필요한 PC만 접근하도록 방화벽을 설정합니다. |
+| 수신 포트 | 지정한 IPv4의 TCP 443은 HTTPS 콘솔·MCP·인증에 사용하며 `MINT_HTTPS_PORT`로 변경할 수 있습니다. TCP 3128은 관리형 PC의 모델 프록시에 사용하며 `MODEL_PROXY_PORT`로 변경할 수 있습니다. 필요한 PC만 접근하도록 방화벽을 설정합니다. |
 | 내부 네트워크 | 기본 Docker 네트워크는 `10.246.1.0/24`, `10.246.3.0/24`, `10.246.4.0/24`, `10.246.5.0/24`, `10.246.6.0/24`, `10.246.9.0/24`, `10.246.11.0/24`, `10.246.12.0/24`를 사용합니다. 조직의 네트워크와 겹치면 `.env`의 `MINT_NET_PREFIX`를 변경합니다. |
 
 ## 설치와 첫 로그인
@@ -60,6 +60,7 @@ cd mint/deploy
 | `MINT_BIND`, `MINT_PUBLIC_NAME` | 게시할 사내 IPv4와 선택적인 인증서 DNS 이름입니다. |
 | `FIELD_CONSOLE_TLS`, `FIELD_CONSOLE_NAME`, `FIELD_CONSOLE_CERT_FILE`, `FIELD_CONSOLE_KEY_FILE` | 위 콘솔 인증서 방식과 이름·파일 경로입니다. |
 | `MODEL_PROXY_PORT`, `MINT_NET_PREFIX` | 모델 프록시 포트 `3128`, 내부 네트워크 접두부 `10.246`입니다. |
+| `MINT_HTTPS_PORT`, `MINT_PROJECT` | HTTPS 포트 `443`, 컴포즈 프로젝트 이름 `mint`입니다. 한 서버에 MINT를 하나 더 띄울 때 이 둘과 `MODEL_PROXY_PORT`·`MINT_NET_PREFIX`를 모두 다르게 지정합니다. |
 | `DB_POOL_MAX`, `DB_ADMIN_POOL_MAX`, `DB_ADMIN_STATEMENT_TIMEOUT_MS` | 게이트웨이의 도구 판정 풀과 콘솔 집계 풀은 기본 최대 10개와 3개의 DB 연결을 사용합니다. 호출 기록 분석·대시보드 요약·지연·상태 조회의 집계 SQL에는 기본 10초 제한이 적용됩니다. |
 | `ROOT_SOLO_APPROVAL` | 기본 `1`(root 단독 승인)입니다. 관리자 여러 명이 서로 승인하게 하려면 `0`으로 둡니다. |
 | `ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_HOURS` | 접근 토큰 10분, 갱신 토큰 8시간입니다. |
