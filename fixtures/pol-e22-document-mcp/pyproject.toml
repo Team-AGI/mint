@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mint-e22-document-mcp"
+version = "0.1.0"
+description = "Single-document write fixture for MINT POL-E-22"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["mcp==2.2.0"]
+
+[project.scripts]
+mint-e22-document-mcp = "mint_e22_document_mcp.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
