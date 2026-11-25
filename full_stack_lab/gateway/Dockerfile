@@ -15,6 +15,14 @@ COPY native/textscan/textscan.c /src/
 RUN mkdir /out && gcc -O2 -fPIC -shared -Wall -Wextra -Werror -Wno-unused-parameter -Wno-missing-field-initializers \
       $(python3-config --includes) /src/textscan.c -o /out/mcpgw_textscan$(python3-config --extension-suffix) \
       -Wl,-Bstatic -lpcre2-32 -Wl,-Bdynamic
+FROM python:3.12-slim AS native-rust
+# fast-anything ports (.fast/ports): functions verified against the Python original, built as abi3 extensions.
+# The Python function stays and runs when the extension is missing or FAST_ANYTHING_DISABLE=1.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates gcc libc6-dev     && rm -rf /var/lib/apt/lists/*     && curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.100.0
+COPY .fast/ports/ /src/ports/
+# The port's own config targets the local CPU; the image may run on another one.
+ENV RUSTFLAGS="-C opt-level=3"
+RUN mkdir /out && for d in /src/ports/*/; do       (cd "$d" && /root/.cargo/bin/cargo build --release --locked -q) || exit 1;       for so in "$d"target/release/lib*.so; do n="${so##*/lib}"; cp "$so" "/out/${n%.so}.abi3.so"; done;     done
 FROM python:3.12-slim
 COPY windows-python.json prepare-windows-python.py /tmp/windows-python/
 RUN python /tmp/windows-python/prepare-windows-python.py /tmp/windows-python/windows-python.json /opt/windows-python \
@@ -31,6 +39,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && mkdir -p /runtime /reports /registry-runtime /disposal \
     && chown -R appuser:appuser /app /runtime /reports /registry-runtime /disposal
 COPY --chown=appuser:appuser app ./app
+COPY --from=native-rust /out/ ./.fast/lib/
 ARG MCP_BUILD_REVISION=unknown
 ENV MCP_BUILD_REVISION=$MCP_BUILD_REVISION
 LABEL org.opencontainers.image.revision=$MCP_BUILD_REVISION

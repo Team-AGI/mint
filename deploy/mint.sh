@@ -53,7 +53,8 @@ load_env() {
   MINT_BIND="$(env_value MINT_BIND)"
   [[ "$MINT_BIND" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die ".env의 MINT_BIND에 이 서버의 사내 IPv4를 적으세요."
   [[ "$MINT_BIND" != 0.0.0.0 && "$MINT_BIND" != 127.* ]] || die "MINT_BIND는 모든 인터페이스나 loopback이 될 수 없습니다."
-  CONSOLE_URL="https://${MINT_BIND}"
+  local https_port; https_port="$(env_value MINT_HTTPS_PORT)"; [[ "$https_port" == 443 ]] && https_port=
+  CONSOLE_URL="https://${MINT_BIND}${https_port:+:$https_port}"
   console_tls_configure
   if [[ "$FIELD_CONSOLE_TLS" == tailscale ]]; then
     [[ "$MINT_BIND" == "$(local_tailscale_ip)" ]] || die "tailscale 방식의 MINT_BIND는 이 기기의 실제 Tailscale IPv4여야 합니다."

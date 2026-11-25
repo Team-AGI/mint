@@ -107,3 +107,22 @@ def narrow(rows: list[dict], outbound_text: str) -> tuple[list[str], dict[str, s
         return [s for s in servers if seen[s] != MISMATCH], seen
     except Exception:
         return servers, dict.fromkeys(servers, UNCHECKED)
+
+# >>> fast-anything: app.flow_fingerprint.fingerprint >>>
+# Uses the verified Rust port. FAST_ANYTHING_DISABLE=1 runs the Python above instead.
+# Undo with:  fast-anything disable app.flow_fingerprint.fingerprint
+def _fast_anything_load():
+    import os, sys
+    if os.environ.get("FAST_ANYTHING_DISABLE"):
+        return None
+    lib = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.fast/lib"))
+    if lib not in sys.path:
+        sys.path.append(lib)
+    try:
+        from fa_app_flow_fingerprint_fingerprint import fingerprint
+    except ImportError:
+        return None
+    return fingerprint
+fingerprint = _fast_anything_load() or fingerprint
+del _fast_anything_load
+# <<< fast-anything: app.flow_fingerprint.fingerprint <<<

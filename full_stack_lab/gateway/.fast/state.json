@@ -1,0 +1,1158 @@
+{
+  "version": 1,
+  "command": [
+    "python",
+    "fa_workload.py"
+  ],
+  "lang": "python",
+  "runtime": "/usr/local/bin/python",
+  "base": ".",
+  "wall": 4.824383377010236,
+  "hotspots": [
+    {
+      "id": "app.flow_fingerprint.fingerprint",
+      "file": "app/flow_fingerprint.py",
+      "line": 64,
+      "end_line": 75,
+      "name": "fingerprint",
+      "qualname": "fingerprint",
+      "module": "app.flow_fingerprint",
+      "kind": "function",
+      "ncalls": 122,
+      "tottime": 0.30894501500000005,
+      "cumtime": 3.2878441030000003,
+      "share": 0.6815055616574033,
+      "portability": 1.0,
+      "score": 0.6815055616574033,
+      "blockers": [],
+      "warnings": [
+        "calls _hasher, squash, they get ported together with it"
+      ],
+      "params": [
+        {
+          "name": "text",
+          "annotation": "str",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "salt",
+          "annotation": "bytes",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "limit",
+          "annotation": "int | None",
+          "default": "None",
+          "kwonly": false
+        }
+      ],
+      "returns": "tuple[list[int], list[int]]",
+      "source": "def fingerprint(text: str, salt: bytes, limit: int | None = None) -> tuple[list[int], list[int]]:\n    \"\"\"(shingle hashes, identifier hashes), each distinct and sorted. `limit` bounds how many of each\n    there may be (ValueError over it); the shingles are checked before anything is hashed.\"\"\"\n    flat = squash(text)\n    if limit is not None and len(flat) - SHINGLE + 1 > limit:\n        raise ValueError(\"fingerprint limit exceeded\")\n    digest = _hasher(salt)\n    shingles = {flat[i:i + SHINGLE] for i in range(len(flat) - SHINGLE + 1)}\n    identifiers = {squash(m.group()) for m in _IDENTIFIER.finditer(unicodedata.normalize(\"NFKC\", text))}\n    if limit is not None and len(identifiers) > limit:\n        raise ValueError(\"fingerprint limit exceeded\")\n    return sorted(map(digest, shingles)), sorted(map(digest, identifiers - {\"\"}))",
+      "calls": [
+        "_hasher",
+        "squash"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._Translator.sample",
+      "file": "app/textscan.py",
+      "line": 176,
+      "end_line": 178,
+      "name": "sample",
+      "qualname": "_Translator.sample",
+      "module": "app.textscan",
+      "kind": "method",
+      "ncalls": 1302756,
+      "tottime": 0.300214661,
+      "cumtime": 0.521232268,
+      "share": 0.10804122045603635,
+      "portability": 1.0,
+      "score": 0.10804122045603635,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "symbol",
+          "annotation": "int",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "    @staticmethod\n    def sample(symbol: int) -> str:\n        return SAMPLES.get(symbol) or chr(symbol)",
+      "calls": [],
+      "covered_by": null,
+      "owner": "_Translator",
+      "records": {}
+    },
+    {
+      "id": "app.textscan._atom",
+      "file": "app/textscan.py",
+      "line": 122,
+      "end_line": 124,
+      "name": "_atom",
+      "qualname": "_atom",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 367,
+      "tottime": 0.000941928,
+      "cumtime": 0.030329447,
+      "share": 0.006286699175801353,
+      "portability": 1.0,
+      "score": 0.006286699175801353,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "source",
+          "annotation": "str",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "flags",
+          "annotation": "int",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "re.Pattern",
+      "source": "@functools.lru_cache(maxsize=4096)\ndef _atom(source: str, flags: int) -> re.Pattern:\n    return re.compile(source, flags & (re.I | re.S | re.U))",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._code_class",
+      "file": "app/textscan.py",
+      "line": 151,
+      "end_line": 164,
+      "name": "_code_class",
+      "qualname": "_code_class",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 3104,
+      "tottime": 0.009993561,
+      "cumtime": 0.016057409,
+      "share": 0.003328385773924769,
+      "portability": 1.0,
+      "score": 0.003328385773924769,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "codes",
+          "annotation": "set[int]",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "universe",
+          "annotation": "list[int]",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "def _code_class(codes: set[int], universe: list[int]) -> str:\n    if not codes:\n        return \"(*FAIL)\"\n    if len(codes) == len(universe):\n        return \"(?s:.)\"\n    ordered, parts, start, prev = sorted(codes), [], None, None\n    for code in ordered + [None]:\n        if code is not None and prev is not None and code == prev + 1:\n            prev = code\n            continue\n        if start is not None:\n            parts.append(\"\\\\x{%x}\" % start if start == prev else \"\\\\x{%x}-\\\\x{%x}\" % (start, prev))\n        start = prev = code\n    return \"[\" + \"\".join(parts) + \"]\"",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._named",
+      "file": "app/textscan.py",
+      "line": 127,
+      "end_line": 148,
+      "name": "_named",
+      "qualname": "_named",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 1007,
+      "tottime": 0.00156645,
+      "cumtime": 0.002914329,
+      "share": 0.0006040832106933563,
+      "portability": 0.9,
+      "score": 0.0005436748896240207,
+      "blockers": [],
+      "warnings": [
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "tree",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "out",
+          "annotation": "set[int]",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "None",
+      "source": "def _named(tree, out: set[int]) -> None:\n    for op, av in tree:\n        if op in (C.LITERAL, C.NOT_LITERAL):\n            out.add(av)\n        elif op is C.IN:\n            for item_op, item_av in av:\n                if item_op is C.LITERAL:\n                    out.add(item_av)\n                elif item_op is C.RANGE:\n                    low, high = item_av\n                    if high - low > 4096:\n                        raise Unsupported(\"range too wide for the alphabet\")\n                    out.update(range(low, high + 1))\n        elif op is C.BRANCH:\n            for alternative in av[1]:\n                _named(alternative, out)\n        elif op is C.SUBPATTERN:\n            _named(av[3], out)\n        elif op in (C.MAX_REPEAT, C.MIN_REPEAT):\n            _named(av[2], out)\n        elif op in (C.ASSERT, C.ASSERT_NOT):\n            _named(av[1], out)",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.flow_fingerprint.leaf_text",
+      "file": "app/flow_fingerprint.py",
+      "line": 34,
+      "end_line": 49,
+      "name": "leaf_text",
+      "qualname": "leaf_text",
+      "module": "app.flow_fingerprint",
+      "kind": "function",
+      "ncalls": 122,
+      "tottime": 0.001338931,
+      "cumtime": 0.0022739170000000003,
+      "share": 0.0004713383705855464,
+      "portability": 1.0,
+      "score": 0.0004713383705855464,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "value",
+          "annotation": "object",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "keys",
+          "annotation": "bool",
+          "default": "False",
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "def leaf_text(value: object, keys: bool = False) -> str:\n    \"\"\"Every string and number in a JSON value, one per line. Unlike the Presidio walk there is no depth\n    or list-length cut-off: whatever is left out of the text is left out of the comparison, and an\n    argument nested deeper than that cut-off would carry data past it.\"\"\"\n    parts, pending = [], [value]\n    while pending:\n        item = pending.pop()\n        if isinstance(item, str):\n            parts.append(item)\n        elif isinstance(item, dict):\n            pending.extend(reversed([*item.keys(), *item.values()] if keys else list(item.values())))\n        elif isinstance(item, list):\n            pending.extend(reversed(item))\n        elif isinstance(item, (int, float)) and not isinstance(item, bool):\n            parts.append(str(item))\n    return \"\\n\".join(parts)",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._atom_source",
+      "file": "app/textscan.py",
+      "line": 110,
+      "end_line": 119,
+      "name": "_atom_source",
+      "qualname": "_atom_source",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 3100,
+      "tottime": 0.001754389,
+      "cumtime": 0.002376027,
+      "share": 0.0004925037697713963,
+      "portability": 0.9,
+      "score": 0.00044325339279425665,
+      "blockers": [],
+      "warnings": [
+        "calls _class_source, they get ported together with it",
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "op",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "av",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str | None",
+      "source": "def _atom_source(op, av) -> str | None:\n    if op is C.LITERAL:\n        return \"\\\\U%08x\" % av\n    if op is C.NOT_LITERAL:\n        return \"[^\\\\U%08x]\" % av\n    if op is C.ANY:\n        return \".\"\n    if op is C.IN:\n        return _class_source(av)\n    return None",
+      "calls": [
+        "_class_source"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._fold",
+      "file": "app/textscan.py",
+      "line": 82,
+      "end_line": 84,
+      "name": "_fold",
+      "qualname": "_fold",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 1752,
+      "tottime": 0.000484202,
+      "cumtime": 0.000849584,
+      "share": 0.00017610209090109744,
+      "portability": 1.0,
+      "score": 0.00017610209090109744,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "code",
+          "annotation": "int",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "int",
+      "source": "def _fold(code: int) -> int:\n    low = _tolower(code)\n    return GROUPS.get(low, low)",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.poisoning._readable",
+      "file": "app/poisoning.py",
+      "line": 225,
+      "end_line": 232,
+      "name": "_readable",
+      "qualname": "_readable",
+      "module": "app.poisoning",
+      "kind": "function",
+      "ncalls": 142,
+      "tottime": 0.000171442,
+      "cumtime": 0.00043966,
+      "share": 0.00009113289007982318,
+      "portability": 1.0,
+      "score": 0.00009113289007982318,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "raw",
+          "annotation": "bytes",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str | None",
+      "source": "def _readable(raw: bytes) -> str | None:\n    try:\n        decoded = raw.decode(\"utf-8\")\n    except UnicodeDecodeError:\n        return None\n    if len(decoded) >= 12 and \" \" in decoded and sum(c.isprintable() or c in \"\\r\\n\\t\" for c in decoded) >= 0.95 * len(decoded):\n        return decoded\n    return None",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan.alphabet",
+      "file": "app/textscan.py",
+      "line": 87,
+      "end_line": 90,
+      "name": "alphabet",
+      "qualname": "alphabet",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 1,
+      "tottime": 0.000188921,
+      "cumtime": 0.000417497,
+      "share": 0.00008653893510816528,
+      "portability": 1.0,
+      "score": 0.00008653893510816528,
+      "blockers": [],
+      "warnings": [
+        "calls _fold, they get ported together with it"
+      ],
+      "params": [
+        {
+          "name": "named",
+          "annotation": "set[int]",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "frozenset[int]",
+      "source": "def alphabet(named: set[int]) -> frozenset[int]:\n    \"\"\"The named characters and every symbol a folded subject character can become.\"\"\"\n    folds = {code for named_code in named for code in CLASSES.get(_tolower(named_code), (_fold(named_code),))}\n    return frozenset(named | folds)",
+      "calls": [
+        "_fold"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._groups",
+      "file": "app/textscan.py",
+      "line": 53,
+      "end_line": 76,
+      "name": "_groups",
+      "qualname": "_groups",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 1,
+      "tottime": 0.00013111400000000002,
+      "cumtime": 0.000294801,
+      "share": 0.00006110646210349351,
+      "portability": 1.0,
+      "score": 0.00006110646210349351,
+      "blockers": [],
+      "warnings": [
+        "calls _kind, they get ported together with it"
+      ],
+      "params": [],
+      "returns": "tuple[dict[int, int], dict[int, frozenset[int]]]",
+      "source": "def _groups() -> tuple[dict[int, int], dict[int, frozenset[int]]]:\n    \"\"\"The extra IGNORECASE equivalences _sre applies (i/ı, s/ſ, ...).\n\n    Each member folds onto the smallest member of its own category: \\\\b, \\\\w, \\\\d and \\\\s\n    read the subject's own character, and one group joins a combining mark with letters\n    (U+0345 with iota). The second table gives every such representative of a member's group.\n    \"\"\"\n    try:  # 3.11+: generated table used by re._compiler\n        from re._casefix import _EXTRA_CASES as fixes\n    except ImportError:  # older layout\n        from re import _compiler\n        fixes = getattr(_compiler, \"_ignorecase_fixes\", None)\n    if not fixes:\n        raise ImportError(\"re case-fold table not found\")\n    groups, classes = {}, {}\n    for low, others in fixes.items():\n        kinds: dict[int, list[int]] = {}\n        for member in (low, *others):\n            kinds.setdefault(_kind(member), []).append(member)\n        representatives = frozenset(min(members) for members in kinds.values())\n        for members in kinds.values():\n            for member in members:\n                groups[member], classes[member] = min(members), representatives\n    return groups, classes",
+      "calls": [
+        "_kind"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._parts",
+      "file": "app/textscan.py",
+      "line": 234,
+      "end_line": 241,
+      "name": "_parts",
+      "qualname": "_parts",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 31,
+      "tottime": 0.000023906,
+      "cumtime": 0.000038319,
+      "share": 7.942776725125654e-6,
+      "portability": 0.9,
+      "score": 7.148499052613088e-6,
+      "blockers": [],
+      "warnings": [
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "rule",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "list[re.Pattern]",
+      "source": "def _parts(rule) -> list[re.Pattern]:\n    \"\"\"A rule is a compiled pattern or an object whose .patterns must all match (poisoning._Both).\"\"\"\n    if isinstance(rule, re.Pattern):\n        return [rule]\n    patterns = getattr(rule, \"patterns\", None)\n    if isinstance(patterns, list) and all(isinstance(p, re.Pattern) for p in patterns):\n        return patterns\n    raise Unsupported(\"rule shape\")",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "fa_workload.py:main",
+      "file": "fa_workload.py",
+      "line": 19,
+      "end_line": 28,
+      "name": "main",
+      "qualname": "main",
+      "module": "__main__",
+      "kind": "function",
+      "ncalls": 1,
+      "tottime": 0.08244986900000001,
+      "cumtime": 3.5796495960000003,
+      "share": 0.7419911139438464,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "does I/O: print"
+      ],
+      "warnings": [
+        "calls corpus, they get ported together with it"
+      ],
+      "params": [],
+      "returns": "None",
+      "source": "def main() -> None:\n    salt = b\"\\x01\" * 16\n    texts = corpus()\n    total = 0\n    for text in texts:\n        total += len(poisoning.result_findings(text))\n        shingles, identifiers = flow_fingerprint.fingerprint(flow_fingerprint.leaf_text({\"content\": [{\"text\": text}]}),\n                                                             salt, flow_fingerprint.MAX_HASHES)\n        total += len(shingles) + len(identifiers)\n    print(\"checked\", len(texts), total)",
+      "calls": [
+        "corpus"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan.Scanner.__init__",
+      "file": "app/textscan.py",
+      "line": 247,
+      "end_line": 289,
+      "name": "__init__",
+      "qualname": "Scanner.__init__",
+      "module": "app.textscan",
+      "kind": "method",
+      "ncalls": 1,
+      "tottime": 0.029390506,
+      "cumtime": 1.151753996,
+      "share": 0.2387360012656715,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "method (module-level functions and @staticmethods only for now)"
+      ],
+      "warnings": [
+        "calls _named, _parts, alphabet, they get ported together with it",
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "self",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "rules",
+          "annotation": "list",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "None",
+      "source": "    def __init__(self, rules: list) -> None:\n        self.rules = list(rules)\n        self.native: dict[int, list[int]] = {}\n        self.engine, self.alphabet = None, frozenset()\n        if mcpgw_textscan is None or _tolower is None:\n            return\n        try:\n            parsed = {}\n            named: set[int] = set(range(128))\n            for index, rule in enumerate(self.rules):\n                try:\n                    trees = [(p, _parser.parse(p.pattern, p.flags)) for p in _parts(rule)]\n                    for pattern, tree in trees:\n                        if not isinstance(pattern.pattern, str):\n                            raise Unsupported(\"bytes pattern\")\n                        if pattern.flags & re.ASCII:\n                            raise Unsupported(\"ASCII classes\")\n                        _named(tree, named)\n                    parsed[index] = trees\n                except (Unsupported, re.error) as exc:\n                    log.info(\"rule %d stays on re: %s\", index, exc)\n            symbols = alphabet(named)\n            if any(code in symbols for code in STANDINS) or any(ord(s) in symbols for s in SAMPLES.values()):\n                raise Unsupported(\"stand-in collides with a named character\")\n            engine = mcpgw_textscan.Engine(\"\".join(map(chr, sorted(symbols))),\n                                           \"\".join(map(chr, STANDINS)), dict(GROUPS))\n            translators = {}\n            for index, trees in parsed.items():\n                try:\n                    ids = []\n                    for pattern, tree in trees:\n                        folded = bool(pattern.flags & re.I)\n                        key = (folded, pattern.flags & (re.I | re.S | re.M))\n                        translator = translators.get(key) or translators.setdefault(\n                            key, _Translator(symbols, folded, pattern.flags))\n                        ids.append(engine.add(translator.emit(tree), folded))\n                    self.native[index] = ids\n                except (Unsupported, ValueError) as exc:\n                    log.info(\"rule %d stays on re: %s\", index, exc)\n            self.engine, self.alphabet = engine, symbols\n        except (Unsupported, ValueError, MemoryError) as exc:\n            log.warning(\"native text rules disabled: %s\", exc)\n            self.native, self.engine = {}, None",
+      "calls": [
+        "_named",
+        "_parts",
+        "alphabet"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._Translator.emit",
+      "file": "app/textscan.py",
+      "line": 204,
+      "end_line": 231,
+      "name": "emit",
+      "qualname": "_Translator.emit",
+      "module": "app.textscan",
+      "kind": "method",
+      "ncalls": 1007,
+      "tottime": 0.007023008000000001,
+      "cumtime": 1.09252891,
+      "share": 0.2264598031753151,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "method (module-level functions and @staticmethods only for now)"
+      ],
+      "warnings": [
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "self",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "tree",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "    def emit(self, tree) -> str:\n        out = []\n        for op, av in tree:\n            if op in (C.LITERAL, C.NOT_LITERAL, C.ANY, C.IN):\n                out.append(self.single(op, av))\n            elif op is C.AT:\n                out.append(self.at(av))\n            elif op is C.BRANCH:\n                out.append(\"(?:\" + \"|\".join(self.emit(alternative) for alternative in av[1]) + \")\")\n            elif op is C.SUBPATTERN:\n                _group, add_flags, del_flags, body = av\n                if add_flags or del_flags:\n                    raise Unsupported(\"scoped inline flags\")\n                out.append(\"(?:\" + self.emit(body) + \")\")\n            elif op in (C.MAX_REPEAT, C.MIN_REPEAT):\n                low, high, body = av\n                unbounded = high == C.MAXREPEAT\n                if low > MAX_REPEAT or (not unbounded and high > MAX_REPEAT):\n                    raise Unsupported(\"repeat count\")\n                count = \"{%d,}\" % low if unbounded else \"{%d,%d}\" % (low, high)\n                out.append(\"(?:\" + self.emit(body) + \")\" + count + (\"?\" if op is C.MIN_REPEAT else \"\"))\n            elif op in (C.ASSERT, C.ASSERT_NOT):\n                direction, body = av\n                kind = (\"=\" if op is C.ASSERT else \"!\")\n                out.append(\"(?\" + (\"<\" if direction < 0 else \"\") + kind + self.emit(body) + \")\")\n            else:\n                raise Unsupported(f\"op {op}\")\n        return \"\".join(out)",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._Translator.single",
+      "file": "app/textscan.py",
+      "line": 180,
+      "end_line": 182,
+      "name": "single",
+      "qualname": "_Translator.single",
+      "module": "app.textscan",
+      "kind": "method",
+      "ncalls": 3100,
+      "tottime": 0.302630173,
+      "cumtime": 1.0777862850000002,
+      "share": 0.22340394632317245,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "method (module-level functions and @staticmethods only for now)"
+      ],
+      "warnings": [
+        "calls _atom, _atom_source, _code_class, they get ported together with it",
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "self",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "op",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "av",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "    def single(self, op, av) -> str:\n        pattern = _atom(_atom_source(op, av), self.flags)\n        return _code_class({s for s in self.universe if pattern.fullmatch(self.sample(s))}, self.universe)",
+      "calls": [
+        "_atom",
+        "_atom_source",
+        "_code_class"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.flow_fingerprint.squash",
+      "file": "app/flow_fingerprint.py",
+      "line": 52,
+      "end_line": 55,
+      "name": "squash",
+      "qualname": "squash",
+      "module": "app.flow_fingerprint",
+      "kind": "function",
+      "ncalls": 1122,
+      "tottime": 0.001059492,
+      "cumtime": 0.6923577700000001,
+      "share": 0.1435121788411989,
+      "portability": 1.0,
+      "score": 0.0,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "text",
+          "annotation": "str",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "def squash(text: str) -> str:\n    \"\"\"Letters and digits only, compatibility-folded and case-folded: spacing, punctuation, case, width\n    and zero-width characters no longer change the text.\"\"\"\n    return \"\".join(ch for ch in unicodedata.normalize(\"NFKC\", text).casefold() if ch.isalnum())",
+      "calls": [],
+      "covered_by": "app.flow_fingerprint.fingerprint",
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.poisoning.result_findings",
+      "file": "app/poisoning.py",
+      "line": 301,
+      "end_line": 303,
+      "name": "result_findings",
+      "qualname": "result_findings",
+      "module": "app.poisoning",
+      "kind": "function",
+      "ncalls": 122,
+      "tottime": 0.000519997,
+      "cumtime": 0.197508465,
+      "share": 0.040939628873856174,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "calls _scan, which calls _variants, which does I/O: urllib.parse.unquote"
+      ],
+      "warnings": [
+        "calls _scan, they get ported together with it"
+      ],
+      "params": [
+        {
+          "name": "text",
+          "annotation": "str",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "list[str]",
+      "source": "def result_findings(text: str) -> list[str]:\n    \"\"\"The narrow set for upstream output, which is withheld on a hit.\"\"\"\n    return _scan(text or \"\", OVERRIDE_RULES)",
+      "calls": [
+        "_scan"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.poisoning._scan",
+      "file": "app/poisoning.py",
+      "line": 276,
+      "end_line": 293,
+      "name": "_scan",
+      "qualname": "_scan",
+      "module": "app.poisoning",
+      "kind": "function",
+      "ncalls": 122,
+      "tottime": 0.002482956,
+      "cumtime": 0.196988468,
+      "share": 0.04083184370021555,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "calls _variants, which does I/O: urllib.parse.unquote"
+      ],
+      "warnings": [
+        "calls _catalog_variants, _variants, they get ported together with it"
+      ],
+      "params": [
+        {
+          "name": "text",
+          "annotation": "str",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "rules",
+          "annotation": "tuple",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "list[str]",
+      "source": "def _scan(text: str, rules: tuple) -> list[str]:\n    invisible = len(_ALL) - 2 if rules is CATALOG_RULES else len(_ALL) - 1\n    found = []\n    readings = [text, *_variants(text)]\n    if rules is CATALOG_RULES:\n        # One layer and at most four extra scans, rather than a recursive decoder tree.\n        readings.extend(_catalog_variants(text))\n    for reading in readings:\n        if rules == CATALOG_RULES[:len(rules)]:\n            which = [*range(len(rules)), invisible]\n            hits = _SCANNER.hits(reading, which)\n            checks = [(_ALL[index][0], hits[index]) for index in which]\n        else:\n            checks = [(label, bool(rule.search(reading))) for label, rule in (*rules, _ALL[invisible])]\n        for label, hit in checks:\n            if hit and label not in found:\n                found.append(label)\n    return found",
+      "calls": [
+        "_catalog_variants",
+        "_variants"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan.Scanner.hits",
+      "file": "app/textscan.py",
+      "line": 291,
+      "end_line": 310,
+      "name": "hits",
+      "qualname": "Scanner.hits",
+      "module": "app.textscan",
+      "kind": "method",
+      "ncalls": 127,
+      "tottime": 0.004123367,
+      "cumtime": 0.130723038,
+      "share": 0.027096320458887668,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "method (module-level functions and @staticmethods only for now)"
+      ],
+      "warnings": [
+        "calls _parts, they get ported together with it",
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "self",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "text",
+          "annotation": "str",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "which",
+          "annotation": "list[int] | None",
+          "default": "None",
+          "kwonly": false
+        }
+      ],
+      "returns": "dict[int, bool]",
+      "source": "    def hits(self, text: str, which: list[int] | None = None) -> dict[int, bool]:\n        \"\"\"{index: rule.search(text) is not None} for the requested rules (all by default).\"\"\"\n        pending = list(range(len(self.rules)) if which is None else which)\n        result = dict.fromkeys(pending, False)\n        if self.engine is not None and self.native:\n            order = [(index, part) for index in pending if index in self.native for part in self.native[index]]\n            try:\n                matched = self.engine.search(text, [part for _, part in order])\n            except ValueError as exc:\n                log.warning(\"native text rules fell back to re: %s\", exc)\n            else:\n                verdict: dict[int, bool] = {}\n                for (index, _), hit in zip(order, matched):\n                    verdict[index] = verdict.get(index, True) and hit\n                for index, hit in verdict.items():\n                    result[index] = hit\n                pending = [index for index in pending if index not in verdict]\n        for index in pending:\n            result[index] = all(p.search(text) for p in _parts(self.rules[index]))\n        return result",
+      "calls": [
+        "_parts"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.poisoning._variants",
+      "file": "app/poisoning.py",
+      "line": 235,
+      "end_line": 257,
+      "name": "_variants",
+      "qualname": "_variants",
+      "module": "app.poisoning",
+      "kind": "function",
+      "ncalls": 122,
+      "tottime": 0.003611174,
+      "cumtime": 0.063640167,
+      "share": 0.013191357739782084,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "does I/O: urllib.parse.unquote"
+      ],
+      "warnings": [
+        "calls _readable, they get ported together with it"
+      ],
+      "params": [
+        {
+          "name": "text",
+          "annotation": "str",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "list[str]",
+      "source": "def _variants(text: str) -> list[str]:\n    \"\"\"Other readings of the same text; empty for ordinary text, so the common case costs one scan.\"\"\"\n    out = []\n    if not text.isascii():\n        folded = _FORMAT.sub(\"\", unicodedata.normalize(\"NFKC\", text)).translate(_LOOKALIKE)\n        if folded != text:\n            out.append(folded)\n    if \"%\" in text and sum(1 for _ in itertools.islice(_PERCENT.finditer(text), 3)) == 3:\n        out.append(urllib.parse.unquote(text))\n    if \"&#\" in text and sum(1 for _ in itertools.islice(_ENTITY.finditer(text), 3)) == 3:\n        out.append(html.unescape(text))\n    # A run of letters only is an identifier far more often than base64 (a sentence's base64 has a digit or a\n    # sign with probability 99%), and decoding every long identifier of a source file is the cost.\n    blobs = (m.group() for m in _BLOB.finditer(text))\n    for blob in itertools.islice((b for b in blobs if not b.isalpha()), 40):\n        for decode in (lambda b: base64.b64decode(b + \"=\" * (-len(b) % 4), validate=True),\n                       lambda b: bytes.fromhex(b[:len(b) // 2 * 2]) if re.fullmatch(r\"[0-9a-fA-F]+\", b) else b\"\"):\n            try:\n                if (readable := _readable(decode(blob))) is not None:\n                    out.append(readable)\n            except ValueError:\n                pass\n    return out",
+      "calls": [
+        "_readable"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "fa_workload.py:corpus",
+      "file": "fa_workload.py",
+      "line": 9,
+      "end_line": 16,
+      "name": "corpus",
+      "qualname": "corpus",
+      "module": "__main__",
+      "kind": "function",
+      "ncalls": 1,
+      "tottime": 0.001057008,
+      "cumtime": 0.009306655,
+      "share": 0.0019290869470177795,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "does I/O: glob.glob, open"
+      ],
+      "warnings": [],
+      "params": [],
+      "returns": "list[str]",
+      "source": "def corpus() -> list[str]:\n    texts = []\n    for path in sorted(glob.glob(sys.prefix + \"/lib/python3.*/*.py\"))[:120]:\n        with open(path, encoding=\"utf-8\", errors=\"replace\") as fh:\n            texts.append(fh.read()[:48_000])\n    korean = \"결재 문서 번호 2026-1125-0042, 담당자 kim.minsu@corp.example, 계좌 110-234-567890. \" * 300\n    texts += [korean, json.dumps({\"rows\": [{\"id\": i, \"memo\": f\"고객 {i} 응대 기록\"} for i in range(2000)]}, ensure_ascii=False)]\n    return texts",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._Translator.__init__",
+      "file": "app/textscan.py",
+      "line": 168,
+      "end_line": 174,
+      "name": "__init__",
+      "qualname": "_Translator.__init__",
+      "module": "app.textscan",
+      "kind": "method",
+      "ncalls": 4,
+      "tottime": 0.001146315,
+      "cumtime": 0.003940784,
+      "share": 0.000816847188964941,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "method (module-level functions and @staticmethods only for now)"
+      ],
+      "warnings": [
+        "calls _atom, _code_class, _fold, they get ported together with it",
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "self",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "alphabet",
+          "annotation": "frozenset[int]",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "folded",
+          "annotation": "bool",
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "flags",
+          "annotation": "int",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": null,
+      "source": "    def __init__(self, alphabet: frozenset[int], folded: bool, flags: int):\n        self.folded = folded\n        self.flags = flags\n        symbols = {_fold(code) for code in alphabet} if folded else set(alphabet)\n        self.universe = sorted(symbols | set(STANDINS))\n        word = _atom(r\"\\w\", re.U)\n        self.word = _code_class({s for s in self.universe if word.fullmatch(self.sample(s))}, self.universe)",
+      "calls": [
+        "_atom",
+        "_code_class",
+        "_fold"
+      ],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.flow_fingerprint._hasher",
+      "file": "app/flow_fingerprint.py",
+      "line": 58,
+      "end_line": 61,
+      "name": "_hasher",
+      "qualname": "_hasher",
+      "module": "app.flow_fingerprint",
+      "kind": "function",
+      "ncalls": 122,
+      "tottime": 0.001257069,
+      "cumtime": 0.001479931,
+      "share": 0.0003067606540252077,
+      "portability": 0.9,
+      "score": 0.0,
+      "blockers": [],
+      "warnings": [
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "salt",
+          "annotation": "bytes",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": null,
+      "source": "def _hasher(salt: bytes):\n    key = hashlib.blake2b(salt + _PEPPER, digest_size=32).digest()\n    return lambda item: int.from_bytes(\n        hashlib.blake2b(item.encode(), digest_size=8, key=key).digest(), \"big\", signed=True)",
+      "calls": [],
+      "covered_by": "app.flow_fingerprint.fingerprint",
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._Translator.at",
+      "file": "app/textscan.py",
+      "line": 184,
+      "end_line": 202,
+      "name": "at",
+      "qualname": "_Translator.at",
+      "module": "app.textscan",
+      "kind": "method",
+      "ncalls": 86,
+      "tottime": 0.000514762,
+      "cumtime": 0.0012693650000000002,
+      "share": 0.0002631144543878788,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "method (module-level functions and @staticmethods only for now)"
+      ],
+      "warnings": [
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "self",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        },
+        {
+          "name": "code",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "    def at(self, code) -> str:\n        multiline = self.flags & re.M\n        newline = \"\\\\x{a}\"\n        if code is C.AT_BEGINNING_STRING or (code is C.AT_BEGINNING and not multiline):\n            return r\"\\A\"\n        if code is C.AT_BEGINNING_LINE or code is C.AT_BEGINNING:\n            return rf\"(?:\\A|(?<={newline}))\"\n        if code is C.AT_END_STRING:\n            return r\"\\z\"\n        if code is C.AT_END and not multiline:\n            return rf\"(?={newline}?\\z)\"\n        if code is C.AT_END_LINE or code is C.AT_END:\n            return rf\"(?={newline}|\\z)\"\n        w = self.word\n        if code in (C.AT_BOUNDARY, C.AT_UNI_BOUNDARY):\n            return f\"(?:(?<={w})(?!{w})|(?<!{w})(?={w}))\"\n        if code in (C.AT_NON_BOUNDARY, C.AT_UNI_NON_BOUNDARY):\n            return rf\"(?:(?!\\A\\z)(?:(?<={w})(?={w})|(?<!{w})(?!{w})))\"\n        raise Unsupported(f\"anchor {code}\")",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._class_source",
+      "file": "app/textscan.py",
+      "line": 93,
+      "end_line": 107,
+      "name": "_class_source",
+      "qualname": "_class_source",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 213,
+      "tottime": 0.000530101,
+      "cumtime": 0.000621638,
+      "share": 0.0001288533583301668,
+      "portability": 1.0,
+      "score": 0.0,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "items",
+          "annotation": "list",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "str",
+      "source": "def _class_source(items: list) -> str:\n    parts = []\n    for op, av in items:\n        if op is C.LITERAL:\n            parts.append(\"\\\\U%08x\" % av)\n        elif op is C.RANGE:\n            parts.append(\"\\\\U%08x-\\\\U%08x\" % av)\n        elif op is C.NEGATE:\n            parts.insert(0, \"^\")\n        elif op is C.CATEGORY:\n            parts.append({C.CATEGORY_DIGIT: r\"\\d\", C.CATEGORY_NOT_DIGIT: r\"\\D\", C.CATEGORY_SPACE: r\"\\s\",\n                          C.CATEGORY_NOT_SPACE: r\"\\S\", C.CATEGORY_WORD: r\"\\w\", C.CATEGORY_NOT_WORD: r\"\\W\"}[av])\n        else:\n            raise Unsupported(f\"class item {op}\")\n    return \"[\" + \"\".join(parts) + \"]\"",
+      "calls": [],
+      "covered_by": "app.textscan._atom_source",
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.poisoning._Both.__init__",
+      "file": "app/poisoning.py",
+      "line": 50,
+      "end_line": 51,
+      "name": "__init__",
+      "qualname": "_Both.__init__",
+      "module": "app.poisoning",
+      "kind": "method",
+      "ncalls": 1,
+      "tottime": 2.511e-6,
+      "cumtime": 0.000332238,
+      "share": 0.00006886641753705204,
+      "portability": 0.0,
+      "score": 0.0,
+      "blockers": [
+        "method (module-level functions and @staticmethods only for now)"
+      ],
+      "warnings": [
+        "takes *args/**kwargs",
+        "missing type hints, types are inferred from recorded calls"
+      ],
+      "params": [
+        {
+          "name": "self",
+          "annotation": null,
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "None",
+      "source": "    def __init__(self, *patterns: str) -> None:\n        self.patterns = [re.compile(pattern, re.I | re.M) for pattern in patterns]",
+      "calls": [],
+      "covered_by": null,
+      "owner": null,
+      "records": {}
+    },
+    {
+      "id": "app.textscan._kind",
+      "file": "app/textscan.py",
+      "line": 45,
+      "end_line": 50,
+      "name": "_kind",
+      "qualname": "_kind",
+      "module": "app.textscan",
+      "kind": "function",
+      "ncalls": 106,
+      "tottime": 0.000044434,
+      "cumtime": 0.000091913,
+      "share": 0.000019051761192527837,
+      "portability": 1.0,
+      "score": 0.0,
+      "blockers": [],
+      "warnings": [],
+      "params": [
+        {
+          "name": "code",
+          "annotation": "int",
+          "default": null,
+          "kwonly": false
+        }
+      ],
+      "returns": "int",
+      "source": "def _kind(code: int) -> int:\n    \"\"\"The category the engine keeps apart (word+decimal, word, space, other), as _sre tests it.\"\"\"\n    char = chr(code)\n    if char.isalnum() or char == \"_\":\n        return 0 if char.isdecimal() else 1\n    return 2 if char.isspace() else 3",
+      "calls": [],
+      "covered_by": "app.textscan._groups",
+      "owner": null,
+      "records": {}
+    }
+  ],
+  "ports": {
+    "app.flow_fingerprint.fingerprint": {
+      "id": "app.flow_fingerprint.fingerprint",
+      "file": "app/flow_fingerprint.py",
+      "module": "app.flow_fingerprint",
+      "func": "fingerprint",
+      "ext": "fa_app_flow_fingerprint_fingerprint",
+      "crate_dir": ".fast/ports/app.flow_fingerprint.fingerprint",
+      "recorded": 122,
+      "calls_seen": 122,
+      "verify": {
+        "built": true,
+        "build_log": null,
+        "total": 422,
+        "derived": 300,
+        "edges": 100,
+        "passed": 422,
+        "failed": 0,
+        "failures": [],
+        "micro": {
+          "original_ns": 10268300.459204912,
+          "rust_ns": 3541789.8277538354,
+          "speedup": 2.899184016719862
+        },
+        "lang": "python",
+        "source_hash": "e9f0442dff6602ef"
+      },
+      "enabled": true,
+      "lang": "python",
+      "owner": null,
+      "line": 64,
+      "sources": [
+        "def fingerprint(text: str, salt: bytes, limit: int | None = None) -> tuple[list[int], list[int]]:\n    \"\"\"(shingle hashes, identifier hashes), each distinct and sorted. `limit` bounds how many of each\n    there may be (ValueError over it); the shingles are checked before anything is hashed.\"\"\"\n    flat = squash(text)\n    if limit is not None and len(flat) - SHINGLE + 1 > limit:\n        raise ValueError(\"fingerprint limit exceeded\")\n    digest = _hasher(salt)\n    shingles = {flat[i:i + SHINGLE] for i in range(len(flat) - SHINGLE + 1)}\n    identifiers = {squash(m.group()) for m in _IDENTIFIER.finditer(unicodedata.normalize(\"NFKC\", text))}\n    if limit is not None and len(identifiers) > limit:\n        raise ValueError(\"fingerprint limit exceeded\")\n    return sorted(map(digest, shingles)), sorted(map(digest, identifiers - {\"\"}))",
+        "def _hasher(salt: bytes):\n    key = hashlib.blake2b(salt + _PEPPER, digest_size=32).digest()\n    return lambda item: int.from_bytes(\n        hashlib.blake2b(item.encode(), digest_size=8, key=key).digest(), \"big\", signed=True)",
+        "def squash(text: str) -> str:\n    \"\"\"Letters and digits only, compatibility-folded and case-folded: spacing, punctuation, case, width\n    and zero-width characters no longer change the text.\"\"\"\n    return \"\".join(ch for ch in unicodedata.normalize(\"NFKC\", text).casefold() if ch.isalnum())"
+      ]
+    }
+  },
+  "bench": {
+    "lang": "python",
+    "command": [
+      "python",
+      "fa_workload.py"
+    ],
+    "runs": 5,
+    "ports": [
+      "app.flow_fingerprint.fingerprint"
+    ],
+    "before": {
+      "median": 1.822912493,
+      "mean": 1.9410931253999997,
+      "min": 1.694337477,
+      "max": 2.3376235579999998,
+      "stddev": 0.2269494348580955
+    },
+    "after": {
+      "median": 1.036898753,
+      "mean": 1.0218362608,
+      "min": 0.890033622,
+      "max": 1.168661164,
+      "stddev": 0.10015358598630522
+    },
+    "speedup": 1.7580429021887347
+  }
+}

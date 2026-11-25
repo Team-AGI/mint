@@ -1,0 +1,6 @@
+.fast/target/
+.fast/lib/
+.fast/ports/*/target/
+**/*.jsonl
+.fast/hook/
+.fast/children/

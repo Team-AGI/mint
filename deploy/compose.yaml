@@ -34,11 +34,11 @@ x-gateway-env: &gateway-env
   DISPOSAL_PUBLIC_KEY: ${DISPOSAL_PUBLIC_KEY:?}
   AGENT_JWT_PUBLIC_KEY: ${AGENT_JWT_PUBLIC_KEY:?}
   ROOT_SOLO_APPROVAL: ${ROOT_SOLO_APPROVAL:-1}
-  IDP_ISSUER: https://${MINT_BIND:?}:443
+  IDP_ISSUER: https://${MINT_BIND:?}:${MINT_HTTPS_PORT:-443}
   IDP_INTERNAL_URL: http://agent-service:8000
-  GATEWAY_PUBLIC_URL: https://${MINT_BIND}:443
-  GATEWAY_PUBLIC_MCP_URL: https://${MINT_BIND}:443/mcp/
-  CONSOLE_PUBLIC_URL: https://${MINT_BIND}:443/
+  GATEWAY_PUBLIC_URL: https://${MINT_BIND}:${MINT_HTTPS_PORT:-443}
+  GATEWAY_PUBLIC_MCP_URL: https://${MINT_BIND}:${MINT_HTTPS_PORT:-443}/mcp/
+  CONSOLE_PUBLIC_URL: https://${MINT_BIND}:${MINT_HTTPS_PORT:-443}/
   FIELD_PUBLIC_NAME: ${MINT_PUBLIC_NAME:-}
   ENDPOINT_GATEWAY_IPS: ${MINT_BIND}
   ENDPOINT_TAILSCALE_NODE_ID: ${ENDPOINT_TAILSCALE_NODE_ID:-}
@@ -177,7 +177,7 @@ services:
       MOCK_SSO_PASSWORD: ${MOCK_SSO_PASSWORD:?}
       ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-10}
       REFRESH_TOKEN_HOURS: ${REFRESH_TOKEN_HOURS:-8}
-      IDP_ISSUER: https://${MINT_BIND}:443
+      IDP_ISSUER: https://${MINT_BIND}:${MINT_HTTPS_PORT:-443}
       ENDPOINT_GATEWAY_IPS: ${MINT_BIND}
       ENDPOINT_TAILSCALE_NODE_ID: ${ENDPOINT_TAILSCALE_NODE_ID:-}
       MODEL_PROXY_PORT: ${MODEL_PROXY_PORT:-3128}
@@ -201,7 +201,7 @@ services:
       GITEA_ADMIN_URL: http://corp-git:3000
       GITEA_ADMIN_USER: ${GITEA_ADMIN_USER:-mintadmin}
       GITEA_ADMIN_PASSWORD: ${GITEA_ADMIN_PASSWORD}
-      GITEA_PUBLIC_URL: https://${MINT_BIND}:443/git
+      GITEA_PUBLIC_URL: https://${MINT_BIND}:${MINT_HTTPS_PORT:-443}/git
       OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
       OTEL_SERVICE_NAME: agent-service
@@ -253,7 +253,7 @@ services:
     environment:
       GITEA__security__INSTALL_LOCK: "true"
       GITEA__database__DB_TYPE: sqlite3
-      GITEA__server__ROOT_URL: https://${MINT_BIND}:443/git/
+      GITEA__server__ROOT_URL: https://${MINT_BIND}:${MINT_HTTPS_PORT:-443}/git/
       GITEA__server__OFFLINE_MODE: "true"
       GITEA__server__DISABLE_SSH: "true"
       GITEA__service__DISABLE_REGISTRATION: "true"
@@ -288,7 +288,7 @@ services:
       gateway: {condition: service_started}
       agent-service: {condition: service_started}
     ports:
-      - "${MINT_BIND}:443:8080"
+      - "${MINT_BIND}:${MINT_HTTPS_PORT:-443}:8080"
     environment:
       FIELD_TLS_ADDRESSES: ${MINT_TLS_ADDRESSES:?}
       APPLIANCE_BIND: ${MINT_BIND}
