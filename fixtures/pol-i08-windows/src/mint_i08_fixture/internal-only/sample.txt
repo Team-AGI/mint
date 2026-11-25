@@ -1,0 +1,1 @@
+POL-I-08 synthetic restricted sample. The test shape is a square.
