@@ -408,7 +408,9 @@ upgrade() {
 set_password() {
   local id="${1:?아이디를 지정하세요}"
   load_env
-  read_password | store_password "$id" || die "그런 계정이 없습니다: $id"
+  # 파이프 왼쪽의 die는 하위 셸만 끝내 오른쪽이 빈 비밀번호를 저장한다. 먼저 받아 둔다.
+  local pw; pw="$(read_password)" || exit 1
+  printf '%s' "$pw" | store_password "$id" || die "그런 계정이 없습니다: $id"
   echo "바꿨습니다: $id"
   [[ "$id" != root ]] || rm -f "$DEPLOY_DIR/initial-admin-password"
 }
@@ -429,8 +431,9 @@ add_account() {
   [[ "$name" =~ ^[a-z][a-z0-9]*([._-][a-z0-9]+)*$ && ${#name} -ge 3 && ${#name} -le 32 ]] \
     || die "아이디는 영문 소문자로 시작하는 3~32자(숫자·. _ - 가능)여야 합니다."
   load_env
+  local pw; pw="$(read_password)" || exit 1
   # 관리자 토큰은 root와 같은 형식(아이디), 직원은 가입 승인과 같은 형식(emp-아이디)이다.
-  read_password | dc exec -T agent-service python -c '
+  printf '%s' "$pw" | dc exec -T agent-service python -c '
 import os, sys, psycopg
 name, role, department, gateway = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
 token, db_role = (name, "admin") if role == "admin" else ("emp-" + name, "employee")
