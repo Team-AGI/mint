@@ -1,4 +1,7 @@
-"""Compare recorded policy inputs with a candidate OPA; never call an MCP tool."""
+"""Compare a synthetic corpus and any legacy recorded inputs with a candidate OPA.
+
+New decisions do not retain OPA inputs and are excluded from recorded-input replay.
+"""
 
 from __future__ import annotations
 

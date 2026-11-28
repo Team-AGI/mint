@@ -2114,20 +2114,8 @@ async def _inspected_result(payload: dict, ignore: privacy.Ignore | None = None)
 
 
 def _audit_payload(payload: dict) -> dict:
-    """Structure stays readable; long text becomes a digest.
-
-    Mail bodies, file contents and SQL results are evidence of *what kind* of call it
-    was, not something the audit table should hold a second copy of.
-    """
-    def shrink(value: Any, depth: int = 0) -> Any:
-        if isinstance(value, str) and len(value) > 300:
-            return {"sha256": canonical_hash(value), "chars": len(value), "head": value[:120]}
-        if isinstance(value, dict) and depth < 4:
-            return {k: shrink(v, depth + 1) for k, v in value.items()}
-        if isinstance(value, list) and depth < 4:
-            return [shrink(v, depth + 1) for v in value[:50]]
-        return value
-    return shrink(payload)
+    """Retain request routing metadata only. Argument names and values can contain documents or secrets."""
+    return {key: payload[key] for key in ("server_id", "tool", "method") if key in payload}
 
 
 # The chain is appended under a row lock, so decision writes serialise on one row.
@@ -2149,7 +2137,8 @@ async def _record_decision(event: dict) -> int:
         "request_payload": _audit_payload(event.get("request_payload") or {}),
         # The response itself is not kept: digest, size, content types and what happened to it.
         "result_preview": event.get("result_evidence") or {"disposition": response_disposition(event)},
-        "error": event.get("error"),
+        # Diagnostics may echo arbitrary upstream content, including unrecognised secrets.
+        "error": secret_scan.ERROR_REDACTED if event.get("error") else None,
         "enforcement": event.get("enforcement") or "enforce",
         "would_decision": event.get("would_decision"),
         "would_policy_id": event.get("would_policy_id"),
@@ -2159,11 +2148,17 @@ async def _record_decision(event: dict) -> int:
         "conflicts": event.get("conflicts") or [],
         "environment": event.get("environment") or GATEWAY_ENVIRONMENT,
         "server_id": event.get("server_id"),
-        "resource_id": event.get("resource_id"),
-        "destinations": event.get("destinations") or [],
+        "resource_id": None,
+        "destinations": [
+            {key: destination[key] for key in ("kind", "category", "external")}
+            for destination in event.get("destinations") or []
+        ],
         "client": event.get("client") or {},
-        "summary": event.get("summary"),
-        "policy_input": event.get("policy_input"),
+        # The request summary contains the original resource ID and destinations.
+        "summary": None,
+        # Keep the live OPA input in memory. Candidate comparisons can use the
+        # synthetic replay corpus without persisting the call's raw evidence.
+        "policy_input": None,
         "risk_score": int(event.get("risk_score") or 0),
         "privacy_types": event.get("privacy_types") or [],
         "sequence_flags": event.get("sequence_flags") or [],
@@ -2564,7 +2559,7 @@ async def execute_call(payload: dict, approval_granted: bool = False, approval_i
         }
         policy_input["pac"] = await pac.build(payload, principal, cls, tool_row, contract, context,
                                              request_id, GATEWAY_ENVIRONMENT, approval_id)
-        base_event["policy_input"] = policy_input  # kept for replay against a candidate policy
+        base_event["policy_input"] = policy_input  # needed for the final dispatch recheck
         laps.lap("context")
         try:
             result = await _policy(policy_input)
